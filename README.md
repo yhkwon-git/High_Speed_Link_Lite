@@ -1,5 +1,17 @@
 # High-Speed Link Lite
 
+## 📄 포트폴리오 PDF
+
+**[포트폴리오 PDF 보기 (21쪽)](portfolio-deck/HighSpeedLinkLite_Portfolio.pdf)** · [PPTX](portfolio-deck/HighSpeedLinkLite_Portfolio.pptx)
+
+SK hynix HBM Digital Design (RTL Design) 지원 · 권용현
+
+[![포트폴리오 표지. 클릭하면 PDF가 열립니다](portfolio-deck/cover.png)](portfolio-deck/HighSpeedLinkLite_Portfolio.pdf)
+
+PDF의 파형, 커버리지, 합성 수치는 커밋 `4feb39f` 기준이다. 그 뒤 커밋은 PDF 19쪽의 재검증 항목 A, B, E를 RTL과 테스트벤치에 반영했고, 회귀는 그대로 13/13 PASS다.
+
+---
+
 HBM base die에서 호스트와 DRAM 코어 다이 사이에 있는 디지털 고속 링크를, 스터디할 수 있는 크기로 줄인 RTL 프로젝트다.
 
 한 채널 슬라이스만 있다. 호스트 명령은 메모리 컨트롤러를 지나 디지털 PHY에 닿고, PHY 핀 너머의 DRAM 동작은 테스트벤치 모델이 맡는다. 아날로그 드라이버, 샘플러, TSV, 인터포저 추출은 이 저장소 밖이다.
@@ -26,10 +38,11 @@ E0–E12가 한 회귀에 들어 있다. `[SMOKE] PASS`와 함께 T1–T8이 통
 ## 디렉터리
 
 ```text
+portfolio-deck/  포트폴리오 PDF, PPTX
 docs/     스펙, PPA, 마이크로아키텍처, 검증, PD, DFT, 용어, 실습
 rtl/      include, top, ctrl, mc, phy, dft
 tb/       스모크 테스트, DRAM 채널 모델
-sim/      filelist, Icarus Verilog 러너
+sim/      filelist, 회귀 러너 (Icarus 또는 WSL Verilator)
 syn/      합성용 filelist, SDC 템플릿
 ```
 
@@ -58,7 +71,7 @@ flowchart LR
 powershell -ExecutionPolicy Bypass -File .\sim\run_smoke.ps1
 ```
 
-Icarus Verilog가 PATH에 있으면 그걸로 돌고, 없으면 WSL의 Verilator를 쓴다. WSL 안에서는 `bash sim/run_smoke.sh` 또는 `make -C sim smoke`다. 확인된 조합은 WSL Verilator 5.052다.
+Icarus Verilog가 PATH에 있으면 그걸로 돌고, 없으면 WSL의 Verilator를 쓴다. WSL 안에서는 `bash sim/run_smoke.sh` 또는 `make -C sim smoke`다. 확인된 조합은 WSL Verilator 5.052다. ModelSim-Altera 10.1d에서도 같은 회귀가 13/13 PASS인 것을 확인했다. 시간 정밀도는 100 fs다(`docs/e12_clocks.md`).
 
 ## 스터디 순서
 
