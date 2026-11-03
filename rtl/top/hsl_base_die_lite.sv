@@ -1,4 +1,4 @@
-`timescale 1ns/1ps
+`timescale 1ns/100fs
 // -----------------------------------------------------------------------------
 // hsl_base_die_lite
 // Study top for one base-die channel slice.
@@ -8,27 +8,29 @@
 //   CSR resets from rst_sync_n only
 //   every other block resets from rst_sync_n & ~soft_rst
 //
-// Live in v0.1: CSR, training FSM, CKE pin, reset tree, hierarchy.
-// Quiet in v0.1: command payload, DQ, DQS, read response.
+// Live after E12: CSR, training FSM, reset tree, queue, scheduler, bank FSMs,
+// phy_bypass framer to the channel model, DBI, lane repair, PRBS compare.
+// Tied off in the chip: gearbox din_valid, FIFO wr_en/rd_en, deskew output.
+// Those blocks are exercised by their own instances in tb_hsl_blocks.
 // -----------------------------------------------------------------------------
 `default_nettype none
 
 module hsl_base_die_lite (
-  input  logic                           clk,
-  input  logic                           rst_n,
+  input  wire                            clk,
+  input  wire                            rst_n,
 
-  input  logic                           cfg_we,
-  input  logic [7:0]                     cfg_addr,
-  input  logic [31:0]                    cfg_wdata,
+  input  wire                            cfg_we,
+  input  wire  [7:0]                     cfg_addr,
+  input  wire  [31:0]                    cfg_wdata,
   output logic [31:0]                    cfg_rdata,
 
-  input  logic                           cmd_valid,
+  input  wire                            cmd_valid,
   output logic                           cmd_ready,
-  input  logic [3:0]                     cmd_opc,
-  input  logic [hsl_pkg::BANK_W-1:0]     cmd_bank,
-  input  logic [hsl_pkg::ROW_W-1:0]      cmd_row,
-  input  logic [hsl_pkg::COL_W-1:0]      cmd_col,
-  input  logic [hsl_pkg::DATA_W-1:0]     cmd_wdata,
+  input  wire  [3:0]                     cmd_opc,
+  input  wire  [hsl_pkg::BANK_W-1:0]     cmd_bank,
+  input  wire  [hsl_pkg::ROW_W-1:0]      cmd_row,
+  input  wire  [hsl_pkg::COL_W-1:0]      cmd_col,
+  input  wire  [hsl_pkg::DATA_W-1:0]     cmd_wdata,
   output logic                           rsp_valid,
   output logic [hsl_pkg::DATA_W-1:0]     rsp_rdata,
   output logic                           rsp_err,
@@ -39,8 +41,8 @@ module hsl_base_die_lite (
   output logic [hsl_pkg::PIN_W-1:0]      pin_dq_o,
   output logic                           pin_dq_oe,
   output logic                           pin_dqs_o,
-  input  logic [hsl_pkg::PIN_W-1:0]      pin_dq_i,
-  input  logic                           pin_dqs_i
+  input  wire  [hsl_pkg::PIN_W-1:0]      pin_dq_i,
+  input  wire                            pin_dqs_i
 );
   logic rst_sync_n;
   logic rst_logic_n;

@@ -1,4 +1,4 @@
-`timescale 1ns/1ps
+`timescale 1ns/100fs
 // -----------------------------------------------------------------------------
 // dram_channel_behav
 // Samples the base-die pins on negedge clk. Protocol is the phy_bypass framer
@@ -9,14 +9,14 @@
 `default_nettype none
 
 module dram_channel_behav (
-  input  logic                      clk,
-  input  logic                      rst_n,
-  input  logic                      pin_ck,
-  input  logic                      pin_cke,
-  input  logic [7:0]                pin_ca,
-  input  logic [hsl_pkg::PIN_W-1:0] pin_dq_i,
-  input  logic                      pin_dq_oe,
-  input  logic                      pin_dqs_i,
+  input  wire                       clk,
+  input  wire                       rst_n,
+  input  wire                       pin_ck,
+  input  wire                       pin_cke,
+  input  wire  [7:0]                pin_ca,
+  input  wire  [hsl_pkg::PIN_W-1:0] pin_dq_i,
+  input  wire                       pin_dq_oe,
+  input  wire                       pin_dqs_i,
   output logic [hsl_pkg::PIN_W-1:0] pin_dq_o,
   output logic                      pin_dqs_o
 );

@@ -28,7 +28,7 @@ hsl_base_die_lite
 
 ## 호스트 포트
 
-`cfg_*`는 바이트 주소의 32비트 버스다. 읽기는 조합 논리라, 주소를 준 다음 한 타임 유닛 뒤에 데이터가 유효하다. 쓰기는 `cfg_we`가 1인 클럭 엣지에서 일어난다.
+`cfg_*`는 바이트 주소의 32비트 버스다. 읽기는 조합 논리라, 주소를 준 같은 사이클 안에 데이터가 유효하다. 테스트벤치는 주소를 준 뒤 1 ps 뒤에 읽는다. 쓰기는 `cfg_we`가 1인 클럭 엣지에서 일어난다.
 
 `cmd_*`와 `rsp_*`는 valid/ready 버스트 버스다. 데이터 폭은 32비트다.
 
@@ -141,4 +141,4 @@ CLOSED --ACT--> ACTIVATING --tRCD--> OPEN --PRE--> PRECHARGING --tRP--> CLOSED
 
 `timing_ok`는 CLOSED에서 1이다. OPEN에서는 `ras_left`와 컬럼 뒤 블록(tWR 또는 tRTP)이 둘 다 0일 때 1이다. 그래서 컬럼 명령은 tRCD에 더해 tRAS도 기다린다. JEDEC 최소보다 엄격하고, tRCD 전에 RD를 거절하는 조건은 그대로다. tCCD와 tWTR은 스케줄러가 채널 단위로 본다. 컬럼을 발행하면 `ccd_cnt`에 `tCCD-1`을 넣어, tCCD=2이면 한 사이클을 띄우고 다음 컬럼을 낸다.
 
-스케줄러는 큐 head만 본다. head가 불법이면 그 비트를 버리지 않고 `req_ready`를 0으로 둔다. NOP은 항상 합법이다. REF와 그 밖의 예약 opcode는 불법이라 head를 막는다.
+스케줄러는 큐 head만 본다. head가 불법이면 그 비트를 버리지 않고 `req_ready`를 0으로 둔다. NOP은 항상 합법이다. REF와 그 밖의 예약 opcode는 불법이라 head를 막는다. 이런 명령이 큐에 들어가면 뒤 명령도 나가지 않고, `soft_rst`로만 풀린다.

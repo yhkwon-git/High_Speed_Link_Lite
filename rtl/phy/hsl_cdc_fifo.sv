@@ -1,4 +1,4 @@
-`timescale 1ns/1ps
+`timescale 1ns/100fs
 // -----------------------------------------------------------------------------
 // hsl_cdc_fifo
 // Depth-4 FIFO. Pointers cross domains as Gray code through two flops:
@@ -14,13 +14,13 @@ module hsl_cdc_fifo #(
   parameter int WIDTH      = 32,
   parameter int SAME_CLOCK = 1
 ) (
-  input  logic             clk_w,
-  input  logic             clk_r,
-  input  logic             rst_n,
-  input  logic             wr_en,
-  input  logic [WIDTH-1:0] wr_data,
+  input  wire              clk_w,
+  input  wire              clk_r,
+  input  wire              rst_n,
+  input  wire              wr_en,
+  input  wire  [WIDTH-1:0] wr_data,
   output logic             wr_full,
-  input  logic             rd_en,
+  input  wire              rd_en,
   output logic [WIDTH-1:0] rd_data,
   output logic             rd_empty
 );
@@ -56,9 +56,15 @@ module hsl_cdc_fifo #(
       rptr_g_s1 <= rgray;
       rptr_g_s2 <= rptr_g_s1;
       if (wr_en && !wr_full) begin
-        mem[wbin[AW-1:0]] <= wr_data;
         wbin <= wbin + 1'b1;
       end
+    end
+  end
+
+  // Data storage has no reset. Validity comes from the reset pointers.
+  always_ff @(posedge clk_w) begin
+    if (wr_en && !wr_full) begin
+      mem[wbin[AW-1:0]] <= wr_data;
     end
   end
 

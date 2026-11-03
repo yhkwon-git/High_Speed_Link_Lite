@@ -1,4 +1,4 @@
-`timescale 1ns/1ps
+`timescale 1ns/100fs
 // -----------------------------------------------------------------------------
 // hsl_csr
 // Host-facing control and status. Byte-addressed, 32-bit, combinational read.
@@ -11,11 +11,11 @@
 `default_nettype none
 
 module hsl_csr (
-  input  logic        clk,
-  input  logic        rst_n,
-  input  logic        cfg_we,
-  input  logic [7:0]  cfg_addr,
-  input  logic [31:0] cfg_wdata,
+  input  wire         clk,
+  input  wire         rst_n,
+  input  wire         cfg_we,
+  input  wire  [7:0]  cfg_addr,
+  input  wire  [31:0] cfg_wdata,
   output logic [31:0] cfg_rdata,
 
   output logic        soft_rst,
@@ -36,10 +36,10 @@ module hsl_csr (
   output logic [31:0] timing0,
   output logic [31:0] timing1,
 
-  input  logic [3:0]  train_state,
-  input  logic        train_done,
-  input  logic        mission_mode,
-  input  logic [15:0] err_cnt
+  input  wire  [3:0]  train_state,
+  input  wire         train_done,
+  input  wire         mission_mode,
+  input  wire  [15:0] err_cnt
 );
   import hsl_pkg::*;
 

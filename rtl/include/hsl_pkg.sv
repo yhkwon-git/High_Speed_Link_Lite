@@ -1,4 +1,4 @@
-`timescale 1ns/1ps
+`timescale 1ns/100fs
 // High-Speed Link Lite
 // Study-scale digital model of an HBM-style base-die link.
 // Parameters below are project choices, not JEDEC values.

@@ -1,4 +1,4 @@
-`timescale 1ns/1ps
+`timescale 1ns/100fs
 // -----------------------------------------------------------------------------
 // hsl_phy_tx
 // phy_bypass command framer. One controller cycle per symbol, no DDR timing.
@@ -16,21 +16,21 @@
 `default_nettype none
 
 module hsl_phy_tx (
-  input  logic                       clk,
-  input  logic                       rst_n,
-  input  logic                       cke,
-  input  logic                       phy_bypass,
-  input  logic                       valid,
+  input  wire                        clk,
+  input  wire                        rst_n,
+  input  wire                        cke,
+  input  wire                        phy_bypass,
+  input  wire                        valid,
   output logic                       ready,
-  input  logic [3:0]                 opc,
-  input  logic [hsl_pkg::BANK_W-1:0] bank,
-  input  logic [hsl_pkg::ROW_W-1:0]  row,
-  input  logic [hsl_pkg::COL_W-1:0]  col,
-  input  logic [hsl_pkg::DATA_W-1:0] wdata,
-  input  logic [hsl_pkg::DATA_W-1:0] raw_data,
-  input  logic [hsl_pkg::BL-1:0]     dbi_flags,
-  input  logic                       repair_en,
-  input  logic [3:0]                 repair_lane,
+  input  wire  [3:0]                 opc,
+  input  wire  [hsl_pkg::BANK_W-1:0] bank,
+  input  wire  [hsl_pkg::ROW_W-1:0]  row,
+  input  wire  [hsl_pkg::COL_W-1:0]  col,
+  input  wire  [hsl_pkg::DATA_W-1:0] wdata,
+  input  wire  [hsl_pkg::DATA_W-1:0] raw_data,
+  input  wire  [hsl_pkg::BL-1:0]     dbi_flags,
+  input  wire                        repair_en,
+  input  wire  [3:0]                 repair_lane,
   output logic [7:0]                 ca,
   output logic [hsl_pkg::PIN_W-1:0]  dq_o,
   output logic                       dq_oe,

@@ -1,4 +1,4 @@
-`timescale 1ns/1ps
+`timescale 1ns/100fs
 // -----------------------------------------------------------------------------
 // hsl_training_fsm
 // Digital sequence for link bring-up.
@@ -16,15 +16,15 @@
 `default_nettype none
 
 module hsl_training_fsm (
-  input  logic       clk,
-  input  logic       rst_n,
-  input  logic       train_bypass,
-  input  logic       train_start,
-  input  logic [7:0] train_wait,
-  input  logic       zq_done,
-  input  logic       wrlvl_done,
-  input  logic       rdlvl_done,
-  input  logic       deskew_done,
+  input  wire        clk,
+  input  wire        rst_n,
+  input  wire        train_bypass,
+  input  wire        train_start,
+  input  wire  [7:0] train_wait,
+  input  wire        zq_done,
+  input  wire        wrlvl_done,
+  input  wire        rdlvl_done,
+  input  wire        deskew_done,
   output logic [3:0] train_state,
   output logic       train_done,
   output logic       mission_mode,

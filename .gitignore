@@ -5,3 +5,10 @@ sim/build/
 *.lxt
 *.o
 *.out
+# simulator and tool scratch
+work/
+transcript
+*.wlf
+obj_dir/
+__pycache__/
+~$*

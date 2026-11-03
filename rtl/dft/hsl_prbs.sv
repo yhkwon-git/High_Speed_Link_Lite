@@ -1,4 +1,4 @@
-`timescale 1ns/1ps
+`timescale 1ns/100fs
 // -----------------------------------------------------------------------------
 // hsl_prbs
 // PRBS7, x^7 + x^6 + 1.
@@ -9,11 +9,11 @@
 `default_nettype none
 
 module hsl_prbs (
-  input  logic                       clk,
-  input  logic                       rst_n,
-  input  logic                       en,
-  input  logic                       load,
-  input  logic [6:0]                 seed,
+  input  wire                        clk,
+  input  wire                        rst_n,
+  input  wire                        en,
+  input  wire                        load,
+  input  wire  [6:0]                 seed,
   output logic                       bit_o,
   output logic [hsl_pkg::DATA_W-1:0] parallel_o
 );

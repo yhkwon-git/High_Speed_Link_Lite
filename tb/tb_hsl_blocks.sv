@@ -1,4 +1,4 @@
-`timescale 1ns/1ps
+`timescale 1ns/100fs
 // Block-level checks for E4, E7, E8, E9, E10, and the PRBS seed rule.
 `default_nettype none
 
@@ -27,20 +27,34 @@ module tb_hsl_blocks (
 
   task automatic bump(input logic cond, input integer tag);
     begin
-      if (!cond) begin
+      // X or Z counts as a failure, not a pass.
+      if (cond !== 1'b1) begin
         $display("[BLK] fail tag %0d", tag);
         local_errors = local_errors + 1;
       end
     end
   endtask
 
+  // Declared before the task: SystemVerilog requires declaration before use.
+  logic [7:0] rep_dq;
+  logic       rep_red;
+  logic       rep_en;
+  logic [3:0] rep_lane;
+  logic [7:0] rep_q;
+  logic       rep_db;
+
+  hsl_lane_repair u_rep (
+    .dq_in(rep_dq),
+    .dbi_in(1'b0),
+    .red_in(rep_red),
+    .repair_en(rep_en),
+    .repair_lane(rep_lane),
+    .dq_out(rep_q),
+    .dbi_out(rep_db)
+  );
+
   task automatic check_repair();
-    logic [7:0] q;
-    logic       db;
     begin
-      // Inline the module via a hierarchy-free expectation by instantiating below.
-      // The instance u_rep is driven by rep_* wires from this task through hierarchical... 
-      // Drive the ports declared in this module.
       rep_dq  = 8'h00;
       rep_red = 1'b1;
       rep_en  = 1'b1;
@@ -59,23 +73,6 @@ module tb_hsl_blocks (
       end
     end
   endtask
-
-  logic [7:0] rep_dq;
-  logic       rep_red;
-  logic       rep_en;
-  logic [3:0] rep_lane;
-  logic [7:0] rep_q;
-  logic       rep_db;
-
-  hsl_lane_repair u_rep (
-    .dq_in(rep_dq),
-    .dbi_in(1'b0),
-    .red_in(rep_red),
-    .repair_en(rep_en),
-    .repair_lane(rep_lane),
-    .dq_out(rep_q),
-    .dbi_out(rep_db)
-  );
 
   logic       dclk;
   logic       drst;

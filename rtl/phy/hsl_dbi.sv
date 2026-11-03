@@ -1,4 +1,4 @@
-`timescale 1ns/1ps
+`timescale 1ns/100fs
 // -----------------------------------------------------------------------------
 // hsl_dbi
 // DBI-DC, one flag per beat. Study rule: invert a beat when its popcount
@@ -7,8 +7,8 @@
 `default_nettype none
 
 module hsl_dbi (
-  input  logic                         en,
-  input  logic [hsl_pkg::DATA_W-1:0]   din,
+  input  wire                          en,
+  input  wire  [hsl_pkg::DATA_W-1:0]   din,
   output logic [hsl_pkg::DATA_W-1:0]   dout,
   output logic [hsl_pkg::BL-1:0]       dbi
 );

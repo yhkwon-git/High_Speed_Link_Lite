@@ -1,4 +1,4 @@
-`timescale 1ns/1ps
+`timescale 1ns/100fs
 // -----------------------------------------------------------------------------
 // hsl_mc_top
 // Host command -> queue -> in-order scheduler -> PHY burst.
@@ -7,32 +7,32 @@
 `default_nettype none
 
 module hsl_mc_top (
-  input  logic                           clk,
-  input  logic                           rst_n,
-  input  logic                           mission_mode,
-  input  logic [31:0]                    timing0,
-  input  logic [31:0]                    timing1,
+  input  wire                            clk,
+  input  wire                            rst_n,
+  input  wire                            mission_mode,
+  input  wire  [31:0]                    timing0,
+  input  wire  [31:0]                    timing1,
 
-  input  logic                           cmd_valid,
+  input  wire                            cmd_valid,
   output logic                           cmd_ready,
-  input  logic [3:0]                     cmd_opc,
-  input  logic [hsl_pkg::BANK_W-1:0]     cmd_bank,
-  input  logic [hsl_pkg::ROW_W-1:0]      cmd_row,
-  input  logic [hsl_pkg::COL_W-1:0]      cmd_col,
-  input  logic [hsl_pkg::DATA_W-1:0]     cmd_wdata,
+  input  wire  [3:0]                     cmd_opc,
+  input  wire  [hsl_pkg::BANK_W-1:0]     cmd_bank,
+  input  wire  [hsl_pkg::ROW_W-1:0]      cmd_row,
+  input  wire  [hsl_pkg::COL_W-1:0]      cmd_col,
+  input  wire  [hsl_pkg::DATA_W-1:0]     cmd_wdata,
   output logic                           rsp_valid,
   output logic [hsl_pkg::DATA_W-1:0]     rsp_rdata,
   output logic                           rsp_err,
 
   output logic                           phy_valid,
-  input  logic                           phy_ready,
+  input  wire                            phy_ready,
   output logic [3:0]                     phy_opc,
   output logic [hsl_pkg::BANK_W-1:0]     phy_bank,
   output logic [hsl_pkg::ROW_W-1:0]      phy_row,
   output logic [hsl_pkg::COL_W-1:0]      phy_col,
   output logic [hsl_pkg::DATA_W-1:0]     phy_wdata,
-  input  logic                           phy_rsp_valid,
-  input  logic [hsl_pkg::DATA_W-1:0]     phy_rsp_rdata
+  input  wire                            phy_rsp_valid,
+  input  wire  [hsl_pkg::DATA_W-1:0]     phy_rsp_rdata
 );
   import hsl_pkg::*;
 

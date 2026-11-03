@@ -1,4 +1,4 @@
-`timescale 1ns/1ps
+`timescale 1ns/100fs
 // -----------------------------------------------------------------------------
 // hsl_gearbox
 // One controller burst (32 bits) becomes two PHY beats of 16 bits.
@@ -11,11 +11,11 @@
 `default_nettype none
 
 module hsl_gearbox (
-  input  logic                         clk_ctrl,
-  input  logic                         clk_phy,
-  input  logic                         rst_n,
-  input  logic [hsl_pkg::DATA_W-1:0]   din_ctrl,
-  input  logic                         din_valid,
+  input  wire                          clk_ctrl,
+  input  wire                          clk_phy,
+  input  wire                          rst_n,
+  input  wire  [hsl_pkg::DATA_W-1:0]   din_ctrl,
+  input  wire                          din_valid,
   output logic                         din_ready,
   output logic [hsl_pkg::DQ_W*hsl_pkg::DDR_BITS-1:0] dout_phy,
   output logic                         dout_valid

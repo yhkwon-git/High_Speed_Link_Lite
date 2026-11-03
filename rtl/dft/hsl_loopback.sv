@@ -1,4 +1,4 @@
-`timescale 1ns/1ps
+`timescale 1ns/100fs
 // -----------------------------------------------------------------------------
 // hsl_loopback
 // Parallel (pre-serializer) loopback.
@@ -13,9 +13,9 @@
 module hsl_loopback #(
   parameter int WIDTH = 32
 ) (
-  input  logic             loopback,
-  input  logic [WIDTH-1:0] from_tx,
-  input  logic [WIDTH-1:0] from_pin,
+  input  wire              loopback,
+  input  wire  [WIDTH-1:0] from_tx,
+  input  wire  [WIDTH-1:0] from_pin,
   output logic [WIDTH-1:0] to_rx
 );
   assign to_rx = loopback ? from_tx : from_pin;

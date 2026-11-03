@@ -1,4 +1,4 @@
-`timescale 1ns/1ps
+`timescale 1ns/100fs
 // -----------------------------------------------------------------------------
 // hsl_phy_top
 // Bypass path talks to the channel model in controller clocks.
@@ -9,30 +9,30 @@
 `default_nettype none
 
 module hsl_phy_top (
-  input  logic                       clk,
-  input  logic                       rst_n,
-  input  logic                       cke,
-  input  logic                       dbi_en,
-  input  logic                       phy_bypass,
-  input  logic                       repair_en,
-  input  logic [3:0]                 repair_lane,
-  input  logic                       loopback,
-  input  logic                       prbs_en,
-  input  logic [hsl_pkg::DATA_W-1:0] prbs_data,
+  input  wire                        clk,
+  input  wire                        rst_n,
+  input  wire                        cke,
+  input  wire                        dbi_en,
+  input  wire                        phy_bypass,
+  input  wire                        repair_en,
+  input  wire  [3:0]                 repair_lane,
+  input  wire                        loopback,
+  input  wire                        prbs_en,
+  input  wire  [hsl_pkg::DATA_W-1:0] prbs_data,
 
-  input  logic                       valid,
+  input  wire                        valid,
   output logic                       ready,
-  input  logic [3:0]                 opc,
-  input  logic [hsl_pkg::BANK_W-1:0] bank,
-  input  logic [hsl_pkg::ROW_W-1:0]  row,
-  input  logic [hsl_pkg::COL_W-1:0]  col,
-  input  logic [hsl_pkg::DATA_W-1:0] wdata,
+  input  wire  [3:0]                 opc,
+  input  wire  [hsl_pkg::BANK_W-1:0] bank,
+  input  wire  [hsl_pkg::ROW_W-1:0]  row,
+  input  wire  [hsl_pkg::COL_W-1:0]  col,
+  input  wire  [hsl_pkg::DATA_W-1:0] wdata,
 
   output logic                       rsp_valid,
   output logic [hsl_pkg::DATA_W-1:0] rsp_rdata,
   output logic [hsl_pkg::DATA_W-1:0] obs_tx_data,
 
-  input  logic [hsl_pkg::DATA_W-1:0] lb_rx_data,
+  input  wire  [hsl_pkg::DATA_W-1:0] lb_rx_data,
 
   output logic                       pin_ck,
   output logic                       pin_cke,
@@ -40,8 +40,8 @@ module hsl_phy_top (
   output logic [hsl_pkg::PIN_W-1:0]  pin_dq_o,
   output logic                       pin_dq_oe,
   output logic                       pin_dqs_o,
-  input  logic [hsl_pkg::PIN_W-1:0]  pin_dq_i,
-  input  logic                       pin_dqs_i
+  input  wire  [hsl_pkg::PIN_W-1:0]  pin_dq_i,
+  input  wire                        pin_dqs_i
 );
   import hsl_pkg::*;
 
@@ -64,7 +64,7 @@ module hsl_phy_top (
   integer            pi;
 
   assign payload     = prbs_en ? prbs_data : wdata;
-  assign obs_tx_data = prbs_en ? prbs_data : payload;
+  assign obs_tx_data = payload; // compare point is before DBI and repair
   assign pin_ck      = 1'b0;
   assign pin_cke     = cke;
 

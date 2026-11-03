@@ -1,6 +1,6 @@
 // Chip-level smoke plus T1, T4, T5, T7, and T8.
 // Controller half-period is CTRL_PERIOD_PS/2 = 625 ps (800 MHz).
-`timescale 1ns/1ps
+`timescale 1ns/100fs
 `default_nettype none
 
 module tb_hsl_smoke;
@@ -247,6 +247,9 @@ module tb_hsl_smoke;
         st = cfg_rdata[STAT_STATE_MSB:STAT_STATE_LSB];
         seen[st] = 1'b1;
         if ((st == TR_WRLVL) && !sent_zq) errors = errors + 1;
+        if ((st == TR_RDLVL) && !sent_wr) errors = errors + 1;
+        if ((st == TR_DESKEW) && !sent_rd) errors = errors + 1;
+        if (((st == TR_WRTRAIN) || (st == TR_MISSION)) && !sent_ds) errors = errors + 1;
         if ((st == TR_ZQCAL) && !sent_zq) begin
           hold = hold + 1;
           if (hold >= 3) begin
@@ -421,8 +424,8 @@ module tb_hsl_smoke;
       push_cmd(OPC_NOP, 2'd0, 8'h0, 4'h0, 32'h0);
       wait_cycles(4);
       csr_read(CSR_ERRCNT, rdata);
-      if (rdata == 32'h0) begin
-        $display("[T8] mismatch was not counted");
+      if ((rdata === 32'h0) || $isunknown(rdata)) begin
+        $display("[T8] mismatch was not counted (%h)", rdata);
         errors = errors + 1;
       end else begin
         $display("[T8] PASS");
@@ -432,7 +435,7 @@ module tb_hsl_smoke;
 
   initial begin
     errors = 0;
-    block_errors = 0;
+    // block_errors is driven by the u_blocks output port only.
     rst_n = 1'b0;
     cfg_we = 1'b0;
     cfg_addr = '0;
@@ -452,6 +455,9 @@ module tb_hsl_smoke;
     end
 
     wait_cycles(5);
+    // Release on negedge. Releasing right after posedge races the first
+    // synchronizer flop and hides one of the two release clocks.
+    @(negedge clk);
     rst_n = 1'b1;
     wait_cycles(4);
 

@@ -1,4 +1,4 @@
-`timescale 1ns/1ps
+`timescale 1ns/100fs
 // -----------------------------------------------------------------------------
 // hsl_err_cnt
 // Saturating 16-bit error counter. DFD readback lives in CSR_ERRCNT.
@@ -9,11 +9,11 @@
 `default_nettype none
 
 module hsl_err_cnt (
-  input  logic        clk,
-  input  logic        rst_n,
-  input  logic        clear,
-  input  logic        event_valid,
-  input  logic        event_err,
+  input  wire         clk,
+  input  wire         rst_n,
+  input  wire         clear,
+  input  wire         event_valid,
+  input  wire         event_err,
   output logic [15:0] count
 );
   always_ff @(posedge clk or negedge rst_n) begin

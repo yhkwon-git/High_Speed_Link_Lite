@@ -1,4 +1,4 @@
-`timescale 1ns/1ps
+`timescale 1ns/100fs
 // -----------------------------------------------------------------------------
 // hsl_bank_fsm
 // Per-bank timing.
@@ -14,15 +14,15 @@
 `default_nettype none
 
 module hsl_bank_fsm (
-  input  logic                       clk,
-  input  logic                       rst_n,
-  input  logic [hsl_pkg::BANK_W-1:0] bank_id,
-  input  logic                       act_req,
-  input  logic                       pre_req,
-  input  logic                       rd_req,
-  input  logic                       wr_req,
-  input  logic [31:0]                timing0,
-  input  logic [31:0]                timing1,
+  input  wire                        clk,
+  input  wire                        rst_n,
+  input  wire  [hsl_pkg::BANK_W-1:0] bank_id,
+  input  wire                        act_req,
+  input  wire                        pre_req,
+  input  wire                        rd_req,
+  input  wire                        wr_req,
+  input  wire  [31:0]                timing0,
+  input  wire  [31:0]                timing1,
   output logic                       is_open,
   output logic                       timing_ok
 );

@@ -1,4 +1,4 @@
-`timescale 1ns/1ps
+`timescale 1ns/100fs
 // -----------------------------------------------------------------------------
 // hsl_rst_sync
 // Async assert, synchronous deassert. Two flops, active-low.
@@ -10,8 +10,8 @@
 `default_nettype none
 
 module hsl_rst_sync (
-  input  logic clk,
-  input  logic rst_ni,
+  input  wire  clk,
+  input  wire  rst_ni,
   output logic rst_no
 );
   logic [1:0] sync_r;

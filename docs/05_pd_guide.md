@@ -13,12 +13,14 @@ v0.1에서 디지털이 PD에 넘기는 내용이다. 좌표와 라이브러리 
 
 - `rst_n`은 비동기 assert다.
 - 해제 동기는 `hsl_rst_sync`의 2플롭만 담당한다.
-- 나머지 플롭은 `rst_logic_n`을 비동기 리셋으로 쓴다. 래치는 없다.
+- 나머지 제어 플롭은 `rst_logic_n`을 비동기 리셋으로 쓴다. 큐와 FIFO의 데이터 배열은 리셋이 없고, 유효성은 리셋되는 포인터가 정한다. 래치는 없다.
 - SDC의 `set_false_path -from rst_n`은 v0.1 단순화다. 실제 덱에서는 싱크러나이저 플롭의 recovery/removal을 이 false path가 가리지 않는지 확인한다.
 
 ## CDC
 
-칩의 `hsl_cdc_fifo`는 `SAME_CLOCK=0`이다. 쓰기 클럭은 `clk_phy`, 읽기 클럭은 `clk`다.
+칩의 `hsl_cdc_fifo`는 `SAME_CLOCK=0`이다(이 파라미터는 동작을 바꾸지 않는다). 쓰기 클럭은 `clk_phy`, 읽기 클럭은 `clk`다.
+
+v0.1 칩에서는 기어박스 `din_valid`, FIFO `wr_en`/`rd_en`이 0이고 deskew 출력은 쓰이지 않는다. 그래서 `clk_phy` 쪽 플롭은 합성에서 상수로 지워지고, 아래 `set_max_delay`는 대상 셀이 없는 상태가 된다. 이 제약은 그 경로를 칩에 연결하는 단계에서 의미를 갖는다. `hsl_phy_clk`는 `SYNTHESIS`가 정의되면 빈 쉘이다. PLL 매크로가 그 자리를 채운다.
 
 - 포인터는 그레이 코드로 넘긴다.
 - `wptr_g_s1` → `wptr_g_s2` 는 읽기 클럭이므로 `set_max_delay 1.25`.
@@ -58,7 +60,7 @@ v0.1에는 컴파일된 SRAM 매크로가 없다. FIFO는 플롭 4개 깊이라 
 
 구현이 이 질문의 답을 바꾸면 가이드를 갱신한다.
 
-1. 클럭이 여전히 하나인가.
+1. 클럭이 여전히 `clk`와 2배 `clk_phy` 둘인가.
 2. 리셋 싱크러나이저 플롭은 어느 셀인가.
 3. 매크로가 생겼는가.
 4. 레인당 deskew 범위는 몇 단인가.

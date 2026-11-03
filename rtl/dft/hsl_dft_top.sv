@@ -1,4 +1,4 @@
-`timescale 1ns/1ps
+`timescale 1ns/100fs
 // -----------------------------------------------------------------------------
 // hsl_dft_top
 // Parallel loopback compare. When prbs_en is set, each tx_valid beat is
@@ -9,13 +9,13 @@
 `default_nettype none
 
 module hsl_dft_top (
-  input  logic                       clk,
-  input  logic                       rst_n,
-  input  logic                       loopback,
-  input  logic                       prbs_en,
-  input  logic                       err_clear,
-  input  logic                       tx_valid,
-  input  logic [hsl_pkg::DATA_W-1:0] tx_data,
+  input  wire                        clk,
+  input  wire                        rst_n,
+  input  wire                        loopback,
+  input  wire                        prbs_en,
+  input  wire                        err_clear,
+  input  wire                        tx_valid,
+  input  wire  [hsl_pkg::DATA_W-1:0] tx_data,
   output logic [hsl_pkg::DATA_W-1:0] rx_data,
   output logic [hsl_pkg::DATA_W-1:0] prbs_data,
   output logic [15:0]                err_cnt
@@ -42,7 +42,7 @@ module hsl_dft_top (
     .to_rx    (rx_data)
   );
 
-  assign got = loopback ? tx_data : '0;
+  assign got = rx_data; // hsl_loopback output: tx_data, or 0 from the pin hook
 
   hsl_err_cnt u_err (
     .clk         (clk),

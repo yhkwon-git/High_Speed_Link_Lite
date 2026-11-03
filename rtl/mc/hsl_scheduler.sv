@@ -1,4 +1,4 @@
-`timescale 1ns/1ps
+`timescale 1ns/100fs
 // -----------------------------------------------------------------------------
 // hsl_scheduler
 // In-order issue of the queue head.
@@ -10,18 +10,18 @@
 `default_nettype none
 
 module hsl_scheduler (
-  input  logic                       clk,
-  input  logic                       rst_n,
-  input  logic [hsl_pkg::BANK_N-1:0] bank_open,
-  input  logic [hsl_pkg::BANK_N-1:0] bank_ready,
-  input  logic [31:0]                timing0,
-  input  logic [31:0]                timing1,
-  input  logic                       req_valid,
+  input  wire                        clk,
+  input  wire                        rst_n,
+  input  wire  [hsl_pkg::BANK_N-1:0] bank_open,
+  input  wire  [hsl_pkg::BANK_N-1:0] bank_ready,
+  input  wire  [31:0]                timing0,
+  input  wire  [31:0]                timing1,
+  input  wire                        req_valid,
   output logic                       req_ready,
-  input  logic [3:0]                 req_opc,
-  input  logic [hsl_pkg::BANK_W-1:0] req_bank,
+  input  wire  [3:0]                 req_opc,
+  input  wire  [hsl_pkg::BANK_W-1:0] req_bank,
   output logic                       issue_valid,
-  input  logic                       issue_ready,
+  input  wire                        issue_ready,
   output logic [3:0]                 issue_opc,
   output logic [hsl_pkg::BANK_W-1:0] issue_bank
 );

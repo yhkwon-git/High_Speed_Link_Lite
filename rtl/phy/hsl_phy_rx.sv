@@ -1,4 +1,4 @@
-`timescale 1ns/1ps
+`timescale 1ns/100fs
 // -----------------------------------------------------------------------------
 // hsl_phy_rx
 // After rd_start, the next BL controller clocks are data beats from the model.
@@ -8,13 +8,13 @@
 `default_nettype none
 
 module hsl_phy_rx (
-  input  logic                       clk,
-  input  logic                       rst_n,
-  input  logic                       rd_start,
-  input  logic [hsl_pkg::PIN_W-1:0]  dq_i,
-  input  logic                       dqs_i,
-  input  logic [hsl_pkg::DATA_W-1:0] lb_data,
-  input  logic                       loopback,
+  input  wire                        clk,
+  input  wire                        rst_n,
+  input  wire                        rd_start,
+  input  wire  [hsl_pkg::PIN_W-1:0]  dq_i,
+  input  wire                        dqs_i,
+  input  wire  [hsl_pkg::DATA_W-1:0] lb_data,
+  input  wire                        loopback,
   output logic                       rsp_valid,
   output logic [hsl_pkg::DATA_W-1:0] rsp_rdata
 );
