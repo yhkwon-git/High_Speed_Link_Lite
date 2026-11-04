@@ -93,14 +93,19 @@ module hsl_mc_top (
 
   generate
     for (genvar gi = 0; gi < BANK_N; gi++) begin : g_bank
+      // Typed localparam instead of a BANK_W'(gi) cast: ModelSim 10.1d vlog
+      // does not parse a cast whose width is a parameter.
+      localparam int                BANK_IDX = gi;
+      localparam logic [BANK_W-1:0] BANK_ID  = BANK_IDX[BANK_W-1:0];
+
       hsl_bank_fsm u_bank (
         .clk       (clk),
         .rst_n     (rst_n),
-        .bank_id   (BANK_W'(gi)),
-        .act_req   (issue_valid && (q_pop_opc == OPC_ACT) && (q_pop_bank == BANK_W'(gi))),
-        .pre_req   (issue_valid && (q_pop_opc == OPC_PRE) && (q_pop_bank == BANK_W'(gi))),
-        .rd_req    (issue_valid && (q_pop_opc == OPC_RD)  && (q_pop_bank == BANK_W'(gi))),
-        .wr_req    (issue_valid && (q_pop_opc == OPC_WR)  && (q_pop_bank == BANK_W'(gi))),
+        .bank_id   (BANK_ID),
+        .act_req   (issue_valid && (q_pop_opc == OPC_ACT) && (q_pop_bank == BANK_ID)),
+        .pre_req   (issue_valid && (q_pop_opc == OPC_PRE) && (q_pop_bank == BANK_ID)),
+        .rd_req    (issue_valid && (q_pop_opc == OPC_RD)  && (q_pop_bank == BANK_ID)),
+        .wr_req    (issue_valid && (q_pop_opc == OPC_WR)  && (q_pop_bank == BANK_ID)),
         .timing0   (timing0),
         .timing1   (timing1),
         .is_open   (bank_open[gi]),

@@ -1,4 +1,4 @@
-// Chip-level smoke plus T1, T4, T5, T7, and T8.
+// Chip-level smoke plus T1, T4, T5, T7, and T8 (PRBS compare, loopback WR->RD).
 // Controller half-period is CTRL_PERIOD_PS/2 = 625 ps (800 MHz).
 `timescale 1ns/100fs
 `default_nettype none
@@ -246,10 +246,12 @@ module tb_hsl_smoke;
         #1ps;
         st = cfg_rdata[STAT_STATE_MSB:STAT_STATE_LSB];
         seen[st] = 1'b1;
-        if ((st == TR_WRLVL) && !sent_zq) errors = errors + 1;
-        if ((st == TR_RDLVL) && !sent_wr) errors = errors + 1;
-        if ((st == TR_DESKEW) && !sent_rd) errors = errors + 1;
-        if (((st == TR_WRTRAIN) || (st == TR_MISSION)) && !sent_ds) errors = errors + 1;
+        if (((st == TR_WRLVL) && !sent_zq) || ((st == TR_RDLVL) && !sent_wr) ||
+            ((st == TR_DESKEW) && !sent_rd) ||
+            (((st == TR_WRTRAIN) || (st == TR_MISSION)) && !sent_ds)) begin
+          $display("[T1] state %0d reached before its done pulse", st);
+          errors = errors + 1;
+        end
         if ((st == TR_ZQCAL) && !sent_zq) begin
           hold = hold + 1;
           if (hold >= 3) begin
@@ -411,7 +413,10 @@ module tb_hsl_smoke;
   endtask
 
   task automatic run_t8();
+    integer t8bad;
+    integer guard;
     begin
+      t8bad = 0;
       arm_bypass((32'h1 << CTRL_PRBS_EN) | (32'h1 << CTRL_LOOPBACK));
       push_cmd(OPC_NOP, 2'd0, 8'h0, 4'h0, 32'h0);
       wait_cycles(4);
@@ -419,6 +424,7 @@ module tb_hsl_smoke;
       if (rdata !== 32'h0) begin
         $display("[T8] good loopback count %h", rdata);
         errors = errors + 1;
+        t8bad = 1;
       end
       arm_bypass(32'h1 << CTRL_PRBS_EN);
       push_cmd(OPC_NOP, 2'd0, 8'h0, 4'h0, 32'h0);
@@ -427,7 +433,31 @@ module tb_hsl_smoke;
       if ((rdata === 32'h0) || $isunknown(rdata)) begin
         $display("[T8] mismatch was not counted (%h)", rdata);
         errors = errors + 1;
-      end else begin
+        t8bad = 1;
+      end
+
+      // Loopback WR then RD returns the TX burst. Column 1 holds another word
+      // in the channel model, so an answer from the pins would not match.
+      arm_bypass(32'h0);
+      push_cmd(OPC_ACT, 2'd3, 8'h09, 4'h0, 32'h0);
+      push_cmd(OPC_WR, 2'd3, 8'h09, 4'h1, 32'h1111_1111);
+      arm_bypass(32'h1 << CTRL_LOOPBACK);
+      push_cmd(OPC_WR, 2'd3, 8'h09, 4'h2, 32'h2222_2222);
+      got_rsp = 1'b0;
+      push_cmd(OPC_RD, 2'd3, 8'h09, 4'h1, 32'h0);
+      guard = 0;
+      while (!got_rsp && (guard < 200)) begin
+        @(posedge clk);
+        guard = guard + 1;
+      end
+      #1ps;
+      if (!got_rsp || (got_data !== 32'h2222_2222)) begin
+        $display("[T8] loopback RD rsp %b data %h (exp 22222222)", got_rsp, got_data);
+        errors = errors + 1;
+        t8bad = 1;
+      end
+
+      if (t8bad == 0) begin
         $display("[T8] PASS");
       end
     end

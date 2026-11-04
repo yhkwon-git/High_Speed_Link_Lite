@@ -3,7 +3,8 @@
 // hsl_phy_rx
 // After rd_start, the next BL controller clocks are data beats from the model.
 // DBI on the pin is undone here so the host sees logical bytes.
-// loopback returns lb_data in one cycle and does not use the pins.
+// With loopback, rd_start returns lb_data on the next clock and the pins are
+// not sampled. hsl_phy_top drives lb_data with the last loopback WR burst.
 // -----------------------------------------------------------------------------
 `default_nettype none
 

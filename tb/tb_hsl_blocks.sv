@@ -35,6 +35,18 @@ module tb_hsl_blocks (
     end
   endtask
 
+  // Each check judges only its own failures (e0 = count at its start), so a
+  // failure in an earlier check does not hide a later PASS line.
+  task automatic report(input string label, input integer e0);
+    begin
+      if (local_errors == e0) begin
+        $display("%s PASS", label);
+      end else begin
+        $display("%s FAIL (%0d)", label, local_errors - e0);
+      end
+    end
+  endtask
+
   // Declared before the task: SystemVerilog requires declaration before use.
   logic [7:0] rep_dq;
   logic       rep_red;
@@ -54,7 +66,9 @@ module tb_hsl_blocks (
   );
 
   task automatic check_repair();
+    integer e0;
     begin
+      e0 = local_errors;
       rep_dq  = 8'h00;
       rep_red = 1'b1;
       rep_en  = 1'b1;
@@ -68,9 +82,7 @@ module tb_hsl_blocks (
       rep_en = 1'b0;
       #1ps;
       bump(rep_q == 8'h00, 703);
-      if (local_errors == 0) begin
-        $display("[T7] unit PASS");
-      end
+      report("[T7] unit", e0);
     end
   endtask
 
@@ -96,7 +108,9 @@ module tb_hsl_blocks (
   );
 
   task automatic check_deskew();
+    integer e0;
     begin
+      e0 = local_errors;
       drst = 1'b0;
       ddin = '0;
       dvalid = 1'b0;
@@ -116,9 +130,7 @@ module tb_hsl_blocks (
       @(negedge dclk);
       #1ps;
       bump(ddout == 8'h01, 902);
-      if (local_errors == 0) begin
-        $display("[E9] PASS");
-      end
+      report("[E9]", e0);
     end
   endtask
 
@@ -145,7 +157,9 @@ module tb_hsl_blocks (
 
   task automatic check_prbs();
     logic [31:0] first;
+    integer e0;
     begin
+      e0 = local_errors;
       prst = 1'b0;
       pen = 1'b0;
       pload = 1'b0;
@@ -168,9 +182,7 @@ module tb_hsl_blocks (
       #1ps;
       bump(ppar !== 32'h0, 803);
       bump(ppar !== first, 804);
-      if (local_errors == 0) begin
-        $display("[E11] prbs PASS");
-      end
+      report("[E11] prbs", e0);
     end
   endtask
 
@@ -208,7 +220,9 @@ module tb_hsl_blocks (
   );
 
   task automatic check_t3();
+    integer e0;
     begin
+      e0 = local_errors;
       srst = 1'b0;
       req_valid = 1'b0;
       req_opc = OPC_WR;
@@ -230,9 +244,7 @@ module tb_hsl_blocks (
       #1ps;
       bump(issue_valid === 1'b1, 303);
       req_valid = 1'b0;
-      if (local_errors == 0) begin
-        $display("[T3] PASS");
-      end
+      report("[T3]", e0);
     end
   endtask
 
@@ -313,7 +325,9 @@ module tb_hsl_blocks (
 
   task automatic check_t2();
     integer k;
+    integer e0;
     begin
+      e0 = local_errors;
       mrst = 1'b0;
       m_valid = 1'b0;
       m_opc = OPC_ACT;
@@ -342,9 +356,7 @@ module tb_hsl_blocks (
         @(negedge mclk);
         bump(p_valid === 1'b0, 215);
       end
-      if (local_errors == 0) begin
-        $display("[T2] PASS");
-      end
+      report("[T2]", e0);
     end
   endtask
 
@@ -386,7 +398,9 @@ module tb_hsl_blocks (
 
   task automatic check_gearbox();
     integer guard;
+    integer e0;
     begin
+      e0 = local_errors;
       grst = 1'b0;
       gvalid = 1'b0;
       gdin = 32'hA1B2_C3D4;
@@ -407,9 +421,7 @@ module tb_hsl_blocks (
       bump(gcount == 2, 7011);
       bump(ggot[0] == 16'hC3D4, 7012);
       bump(ggot[1] == 16'hA1B2, 7013);
-      if (local_errors == 0) begin
-        $display("[E7] PASS");
-      end
+      report("[E7]", e0);
     end
   endtask
 
@@ -447,7 +459,9 @@ module tb_hsl_blocks (
 
   task automatic check_fifo();
     integer guard;
+    integer e0;
     begin
+      e0 = local_errors;
       frst = 1'b0;
       fwen = 1'b0;
       fren = 1'b0;
@@ -485,9 +499,7 @@ module tb_hsl_blocks (
       bump(fgot[0] == 32'h1111_0001, 602);
       bump(fgot[1] == 32'h2222_0002, 603);
       bump(fgot[2] == 32'h3333_0003, 604);
-      if (local_errors == 0) begin
-        $display("[T6] PASS");
-      end
+      report("[T6]", e0);
     end
   endtask
 endmodule

@@ -5,6 +5,10 @@
 // The gearbox, deskew, and async FIFO are on the 2x PHY clock. Command
 // accept stays with the bypass framer so a beat is not popped into a path
 // that does not store it. Gearbox behavior is checked on its own instance.
+//
+// Parallel loopback: lb_hold keeps the last WR burst sent while loopback is
+// on, as returned by the DFT loopback mux. A RD in loopback answers with it,
+// so WR then RD reads the TX burst back without the channel model.
 // -----------------------------------------------------------------------------
 `default_nettype none
 
@@ -61,6 +65,7 @@ module hsl_phy_top (
   logic [DATA_W-1:0] fifo_rdata;
   logic              fifo_full;
   logic              fifo_empty;
+  logic [DATA_W-1:0] lb_hold;
   integer            pi;
 
   assign payload     = prbs_en ? prbs_data : wdata;
@@ -160,13 +165,23 @@ module hsl_phy_top (
     .rd_start    (rd_start)
   );
 
+  // valid is already the scheduler's fire; ready is repeated for clarity.
+  // lb_rx_data equals the WR payload (pre-DBI, pre-repair) while loopback is on.
+  always_ff @(posedge clk or negedge rst_n) begin
+    if (!rst_n) begin
+      lb_hold <= '0;
+    end else if (valid && ready && loopback && (opc == OPC_WR)) begin
+      lb_hold <= lb_rx_data;
+    end
+  end
+
   hsl_phy_rx u_rx (
     .clk       (clk),
     .rst_n     (rst_n),
     .rd_start  (rd_start),
     .dq_i      (pin_dq_i),
     .dqs_i     (pin_dqs_i),
-    .lb_data   (lb_rx_data),
+    .lb_data   (lb_hold),
     .loopback  (loopback),
     .rsp_valid (rsp_valid),
     .rsp_rdata (rsp_rdata)

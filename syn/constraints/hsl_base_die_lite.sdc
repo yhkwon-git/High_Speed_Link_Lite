@@ -50,13 +50,17 @@ set_output_delay -clock clk 0.5 [get_ports {
   pin_dqs_o
 }]
 
-# Gray-pointer synchronizers in hsl_cdc_fifo.
-# One destination period. These paths are not false paths.
-# wptr sync lives on clk (read). rptr sync lives on clk_phy (write).
-set_max_delay $ctrl_period \
-  -from [get_cells u_phy/u_fifo/wptr_g_s1*] \
-  -to   [get_cells u_phy/u_fifo/wptr_g_s2*]
+# Gray-pointer crossings in hsl_cdc_fifo. The crossing is the source-domain
+# Gray flop -> first synchronizer flop. *_s1 -> *_s2 is an ordinary path inside
+# one clock and needs no exception.
+# Bound each crossing to the faster period so the bits of one Gray step arrive
+# within one period of each other. These paths are not false paths.
+#   wgray (clk_phy) -> wptr_g_s1 (clk)
+#   rgray (clk)     -> rptr_g_s1 (clk_phy)
+set_max_delay $phy_period \
+  -from [get_cells u_phy/u_fifo/wgray*] \
+  -to   [get_cells u_phy/u_fifo/wptr_g_s1*]
 
 set_max_delay $phy_period \
-  -from [get_cells u_phy/u_fifo/rptr_g_s1*] \
-  -to   [get_cells u_phy/u_fifo/rptr_g_s2*]
+  -from [get_cells u_phy/u_fifo/rgray*] \
+  -to   [get_cells u_phy/u_fifo/rptr_g_s1*]

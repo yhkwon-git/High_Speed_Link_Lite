@@ -56,7 +56,7 @@ CTRL 비트:
 | --- | --- | --- |
 | 0 | soft_rst | CSR 바깥 데이터패스 리셋 |
 | 1 | train_bypass | FSM을 MISSION으로. 내려도 MISSION에 남음 |
-| 2 | loopback | 병렬 루프백. 핀 루프백은 아님 |
+| 2 | loopback | 병렬 루프백. RD가 루프백 중 마지막 WR 버스트를 돌려줌. 핀 루프백은 아님 |
 | 3 | prbs_en | PRBS7을 TX 페이로드로 |
 | 4 | dbi_en | beat popcount가 4보다 크면 반전 |
 | 5 | phy_bypass | 1일 때 TX가 채널 모델과 버스트를 주고받음 |
@@ -130,6 +130,8 @@ TRAIN 쓰기는 `[0]` start, `[1]` zq_done, `[2]` wrlvl_done, `[3]` rdlvl_done, 
 | NOP | IDLE에서 받고 핀은 조용함 |
 
 채널 모델은 컨트롤러 클럭의 negedge에서 샘플한다. DQS는 스터디용으로 송수신을 한 쌍의 단일 핀으로 줄였다. 실제 HBM3는 WDQS와 RDQS가 나뉜다.
+
+`loopback`이 1이어도 TX는 핀을 똑같이 구동한다. 달라지는 것은 RX다. `hsl_phy_top`의 `lb_hold`가 루프백 중 받아진 WR의 페이로드(DBI와 리페어 전)를 잡아 두고, RD는 `rd_start` 다음 클럭에 핀을 보지 않고 그 값을 응답한다.
 
 기어박스는 칩 안에서 `din_valid`가 0이다. 32비트를 16비트 두 beat로 나누는 동작은 별도 인스턴스가 검사한다. beat0이 하위 16비트다.
 
