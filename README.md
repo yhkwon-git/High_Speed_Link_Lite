@@ -19,10 +19,10 @@ SK hynix HBM Digital Design (RTL Design) 지원 · 권용현
 
 ## 한눈에 보기
 
-| 목표 데이터율 | 회귀 | 코드 커버리지 | 합성 면적 proxy |
+| 설계 범위 | 회귀 | 코드 커버리지 | 합성 면적 proxy |
 | :---: | :---: | :---: | :---: |
-| **3.2 Gb/s/DQ** | **13 / 13 PASS** | **Line 87.5%**<br>**Branch 96.6%** | **3,748 cells**<br>**630 FF** |
-| 컨트롤러 800 MHz<br>PHY 1.6 GHz | SMOKE · T1–T8<br>E7 · E9 · E11 | Toggle 56.6% | Yosys 0.52<br>generic cell |
+| **MC · PHY · DFT** | **13 / 13 PASS** | **Line 87.5%**<br>**Branch 96.6%** | **3,748 cells**<br>**630 FF** |
+| RTL 21개 모듈<br>1,492줄 (주석 제외) | SMOKE · T1–T8<br>E7 · E9 · E11 | Toggle 56.6% | Yosys 0.52<br>generic cell |
 
 > [!NOTE]
 > 커버리지와 합성 수치, PDF의 파형은 commit `4feb39f`에서 측정했다. 그 뒤 `edb139a`가 PDF 19쪽의 재검증 항목 A, B, E를, `d1f8e2b`가 이후 리뷰 결과(CDC Gray 크로싱과 SDC, 루프백 RD, ModelSim 빌드)를 반영했다. 회귀는 HEAD에서 13/13 PASS다(Verilator 5.052, ModelSim-Altera 10.1d).
@@ -115,6 +115,7 @@ hsl_base_die_lite
 | Beat-major 데이터 배치 | DBI와 ECC가 한 UI의 바이트를 한 덩어리로 다룬다 | 레인 단위 접근은 비트를 흩어 읽는다 |
 | CSR은 `rst_sync_n`만, 데이터패스는 `rst_sync_n & ~soft_rst` | CSR까지 soft reset에 넣으면 `soft_rst` 비트가 다음 사이클에 스스로 지워진다 | 리셋 도메인이 둘이 된다 |
 | CDC: Gray 포인터는 소스 클럭의 플롭에서 넘기고, 크로싱은 false path 대신 `set_max_delay` | 조합 XOR 출력이 넘어가면 여러 비트가 바뀌는 순간의 glitch를 싱크 플롭이 잡을 수 있다. false path는 그 경로의 지연을 타이밍이 보지 않게 만든다 | 포인터 레지스터가 늘고, 제약 값을 클럭 주기와 함께 관리해야 한다 |
+| DBI는 DC 방식(beat의 1이 4개를 넘으면 반전)으로 시작 | 직전 beat를 기억하지 않아 조합 논리로 끝나고 검증이 단순하다. high 개수를 줄이는 규칙이라 high에서 종단 전류가 흐르는 I/O에 맞다 | HBM처럼 종단이 없는 짧은 채널에서는 직전 beat 대비 토글 수를 줄이는 AC 방식이 스위칭 전력과 SSO에 더 유리하다 → AC 모드 추가 예정 |
 
 ## 스펙 요약
 
@@ -349,6 +350,8 @@ portfolio-deck/  포트폴리오 PDF, PPTX
 다음 단계:
 
 - [ ] REF 발행과 tRFC 적용, 미지원 opcode는 push 단계에서 거절
+- [ ] `clk_phy` 경로(기어박스, deskew, FIFO)를 칩 데이터패스에 연결해 tie-off 해제(이슈 C)
+- [ ] DBI-AC 모드 추가, PRBS 트래픽에서 off / DC / AC 토글 수 비교
 - [ ] DBI 읽기, 타이밍 재설정, ERRCNT clear 테스트로 커버리지 구멍 메우기
 - [ ] Random traffic과 스코어보드로 toggle 커버리지 올리기
 - [ ] 실제 셀 라이브러리로 STA, 면적, 전력 수치 확보
