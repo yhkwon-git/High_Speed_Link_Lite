@@ -9,7 +9,7 @@ Spec → Architecture → RTL → Verification → PD Guide
 [![Sim](https://img.shields.io/badge/Sim-Verilator%205.052%20%C2%B7%20ModelSim%2010.1d-2ea44f)](sim/)
 [![Synth](https://img.shields.io/badge/Synth-Yosys%200.52-8250df)](syn/)
 
-**[📄 포트폴리오 PDF (21쪽)](portfolio-deck/HighSpeedLinkLite_Portfolio.pdf)** · [PPTX](portfolio-deck/HighSpeedLinkLite_Portfolio.pptx) · [스터디 맵](docs/00_study_map.md)
+**[📄 포트폴리오 PDF (23쪽)](portfolio-deck/HighSpeedLinkLite_Portfolio.pdf)** · [PPTX](portfolio-deck/HighSpeedLinkLite_Portfolio.pptx) · [스터디 맵](docs/00_study_map.md)
 
 <a href="portfolio-deck/HighSpeedLinkLite_Portfolio.pdf"><img src="portfolio-deck/cover.png" width="760" alt="포트폴리오 표지. 클릭하면 PDF가 열립니다"></a>
 
@@ -22,10 +22,10 @@ SK hynix HBM Digital Design (RTL Design) 지원 · 권용현
 | 설계 범위 | 회귀 | 코드 커버리지 | 합성 면적 proxy |
 | :---: | :---: | :---: | :---: |
 | **MC · PHY · DFT** | **15 / 15 PASS** | **Line 87.5%**<br>**Branch 96.6%** | **3,748 cells**<br>**630 FF** |
-| RTL 21개 모듈<br>1,492줄 (주석 제외) | SMOKE · T1–T9<br>E7 · E9 · E11 | Toggle 56.6% | Yosys 0.52<br>generic cell |
+| RTL 21개 모듈<br>1,542줄 (주석 제외) | SMOKE · T1–T9<br>E7 · E9 · E11 | Toggle 56.6% | Yosys 0.52<br>generic cell |
 
 > [!NOTE]
-> 커버리지와 합성 수치, PDF의 파형은 commit `4feb39f`에서 측정했다. 그 뒤 `edb139a`가 PDF 19쪽의 재검증 항목 A, B, E를, `d1f8e2b`가 이후 리뷰 결과(CDC Gray 크로싱과 SDC, 루프백 RD, ModelSim 빌드)를 반영했고, DBI-AC 모드와 T9를 더했다. 회귀는 HEAD에서 15/15 PASS다(Verilator 5.052, ModelSim-Altera 10.1d).
+> 커버리지와 합성 수치, PDF 3–20쪽의 파형은 commit `4feb39f`에서 측정했다. 그 뒤 `edb139a`가 PDF 19쪽의 재검증 항목 A, B, E를, `d1f8e2b`가 이후 리뷰 결과(CDC Gray 크로싱과 SDC, 루프백 RD, ModelSim 빌드)를 반영했고, DBI-AC 모드와 T9를 더했다(PDF 21–22쪽). 회귀는 HEAD에서 15/15 PASS다(Verilator 5.052, ModelSim-Altera 10.1d).
 
 ## 개요
 
@@ -353,7 +353,7 @@ tb/              tb_hsl_smoke (top), tb_hsl_blocks, models/dram_channel_behav
 sim/             filelist.f, run_smoke.ps1, run_smoke.sh, Makefile
 syn/             filelist.f, constraints/hsl_base_die_lite.sdc, ppa_block.sh
 docs/            스펙부터 PD 가이드까지 설계 문서, 실습 기록, images/
-portfolio-deck/  포트폴리오 PDF, PPTX
+portfolio-deck/  포트폴리오 PDF, PPTX (3–20쪽 4feb39f, 21–22쪽 이후 변경)
 ```
 
 ## 문서
