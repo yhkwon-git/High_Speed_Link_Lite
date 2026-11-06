@@ -58,8 +58,9 @@ CTRL 비트:
 | 1 | train_bypass | FSM을 MISSION으로. 내려도 MISSION에 남음 |
 | 2 | loopback | 병렬 루프백. RD가 루프백 중 마지막 WR 버스트를 돌려줌. 핀 루프백은 아님 |
 | 3 | prbs_en | PRBS7을 TX 페이로드로 |
-| 4 | dbi_en | beat popcount가 4보다 크면 반전 |
+| 4 | dbi_en | DBI 켬. 규칙은 bit 6 |
 | 5 | phy_bypass | 1일 때 TX가 채널 모델과 버스트를 주고받음 |
+| 6 | dbi_ac | 0: DC(beat popcount가 4보다 크면 반전), 1: AC(직전 UI 대비 DQ 전이가 4보다 많으면 반전. beat 0의 기준은 WR 헤더 바이트) |
 
 STATUS 비트:
 
