@@ -12,3 +12,4 @@ transcript
 obj_dir/
 __pycache__/
 ~$*
+build/

@@ -3,8 +3,12 @@
 // dram_channel_behav
 // Samples the base-die pins on negedge clk. Protocol is the phy_bypass framer
 // in hsl_phy_tx: ACT/PRE are one strobe, WR is a header plus BL beats, RD
-// drives BL logical bytes back with DBI held 0.
-// Stores one burst per {bank, open row, col}.
+// drives BL bytes back. Stores one burst per {bank, open row, col}.
+//
+// WR data is decoded by its DBI pin whatever the mode. RD data is encoded by
+// mr_dbi_en / mr_dbi_ac, which stand in for the DRAM mode register (this
+// framer has no MRS). The encoder below is the plain serial rule, written
+// apart from rtl/phy/hsl_dbi.sv so it can check that block's RX side.
 // -----------------------------------------------------------------------------
 `default_nettype none
 
@@ -17,6 +21,8 @@ module dram_channel_behav (
   input  wire  [hsl_pkg::PIN_W-1:0] pin_dq_i,
   input  wire                       pin_dq_oe,
   input  wire                       pin_dqs_i,
+  input  wire                       mr_dbi_en,
+  input  wire                       mr_dbi_ac,
   output logic [hsl_pkg::PIN_W-1:0] pin_dq_o,
   output logic                      pin_dqs_o
 );
@@ -32,6 +38,7 @@ module dram_channel_behav (
   logic [COL_W-1:0]  c_cap;
   logic [7:0]        cap_b [0:BL-1];
   logic [DATA_W-1:0] rd_word;
+  logic [BL-1:0]     rd_dbi;
   logic [ROW_W-1:0]  open_row [0:BANK_N-1];
   logic              open_v   [0:BANK_N-1];
   logic [DATA_W-1:0] mem [0:BANK_N-1][0:(1<<ROW_W)-1][0:(1<<COL_W)-1];
@@ -42,6 +49,34 @@ module dram_channel_behav (
   wire               dbi_b    = pin_dq_i[DBI_LSB];
   wire [DQ_W-1:0]    logical  = dbi_b ? ~dq_b : dq_b;
 
+  // {flags, bytes as sent}. last is the DQ byte in the UI before beat 0.
+  function automatic logic [DATA_W+BL-1:0] dbi_encode(
+    input logic [DATA_W-1:0] word,
+    input logic [DQ_W-1:0]   last,
+    input logic              en,
+    input logic              ac
+  );
+    logic [DATA_W-1:0] enc;
+    logic [BL-1:0]     flg;
+    logic [DQ_W-1:0]   sent;
+    logic [DQ_W-1:0]   cmp;
+    integer            b;
+    begin
+      enc  = word;
+      flg  = '0;
+      sent = last;
+      for (b = 0; b < BL; b = b + 1) begin
+        cmp = ac ? (word[b*DQ_W +: DQ_W] ^ sent) : word[b*DQ_W +: DQ_W];
+        if (en && ($countones(cmp) > DQ_W / 2)) begin
+          enc[b*DQ_W +: DQ_W] = ~word[b*DQ_W +: DQ_W];
+          flg[b] = 1'b1;
+        end
+        sent = enc[b*DQ_W +: DQ_W];
+      end
+      dbi_encode = {flg, enc};
+    end
+  endfunction
+
   integer bi;
   always_ff @(negedge clk or negedge rst_n) begin
     if (!rst_n) begin
@@ -50,6 +85,7 @@ module dram_channel_behav (
       b_cap     <= '0;
       c_cap     <= '0;
       rd_word   <= '0;
+      rd_dbi    <= '0;
       pin_dq_o  <= '0;
       pin_dqs_o <= 1'b0;
       for (bi = 0; bi < BANK_N; bi = bi + 1) begin
@@ -77,11 +113,15 @@ module dram_channel_behav (
                 c_cap <= pin_dq_i[COL_W-1:0];
               end
               OPC_RD: begin
-                phase   <= PH_DRV;
-                beat    <= 3'd1;
-                rd_word <= mem[bank_pin][open_row[bank_pin]][pin_dq_i[COL_W-1:0]];
-                pin_dq_o  <= {{(PIN_W-DQ_W){1'b0}},
-                              mem[bank_pin][open_row[bank_pin]][pin_dq_i[COL_W-1:0]][DQ_W-1:0]};
+                logic [DATA_W+BL-1:0] rd_enc;
+                // pin_dq_o still holds the UI before this one (0 when idle).
+                rd_enc    = dbi_encode(mem[bank_pin][open_row[bank_pin]][pin_dq_i[COL_W-1:0]],
+                                       pin_dq_o[DQ_W-1:0], mr_dbi_en, mr_dbi_ac);
+                phase     <= PH_DRV;
+                beat      <= 3'd1;
+                rd_word   <= rd_enc[DATA_W-1:0];
+                rd_dbi    <= rd_enc[DATA_W +: BL];
+                pin_dq_o  <= {{RED_W{1'b0}}, rd_enc[DATA_W], rd_enc[DQ_W-1:0]};
                 pin_dqs_o <= 1'b1;
               end
               default: ;
@@ -110,7 +150,7 @@ module dram_channel_behav (
           if (beat >= BL[2:0]) begin
             phase <= PH_IDLE;
           end else begin
-            pin_dq_o  <= {{(PIN_W-DQ_W){1'b0}}, rd_word[beat*DQ_W +: DQ_W]};
+            pin_dq_o  <= {{RED_W{1'b0}}, rd_dbi[beat[1:0]], rd_word[beat*DQ_W +: DQ_W]};
             pin_dqs_o <= 1'b1;
             beat      <= beat + 1'b1;
           end

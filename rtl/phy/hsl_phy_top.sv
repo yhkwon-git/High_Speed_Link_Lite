@@ -17,6 +17,7 @@ module hsl_phy_top (
   input  wire                        rst_n,
   input  wire                        cke,
   input  wire                        dbi_en,
+  input  wire                        dbi_ac,
   input  wire                        phy_bypass,
   input  wire                        repair_en,
   input  wire  [3:0]                 repair_lane,
@@ -50,6 +51,7 @@ module hsl_phy_top (
   import hsl_pkg::*;
 
   logic [DATA_W-1:0] payload;
+  logic [DQ_W-1:0]   dbi_prev;
   logic [DATA_W-1:0] dbi_word;
   logic [BL-1:0]     dbi_flags;
   logic [DQ_W-1:0]   rep_beat [0:BL-1];
@@ -78,8 +80,15 @@ module hsl_phy_top (
     .clk_phy  (clk_phy)
   );
 
+  // DBI-AC compares beat 0 with the UI before it on DQ. In this framer that
+  // is the WR header, col on DQ[COL_W-1:0] (hsl_phy_tx S_WH). A data-only DQ
+  // bus would pass the last beat of the previous burst instead.
+  assign dbi_prev = {{(DQ_W-COL_W){1'b0}}, col};
+
   hsl_dbi u_dbi (
     .en   (dbi_en),
+    .ac   (dbi_ac),
+    .prev (dbi_prev),
     .din  (payload),
     .dout (dbi_word),
     .dbi  (dbi_flags)

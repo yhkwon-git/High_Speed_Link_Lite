@@ -47,7 +47,7 @@ module hsl_base_die_lite (
   logic rst_sync_n;
   logic rst_logic_n;
 
-  logic soft_rst, train_bypass, loopback, prbs_en, dbi_en, phy_bypass;
+  logic soft_rst, train_bypass, loopback, prbs_en, dbi_en, dbi_ac, phy_bypass;
   logic train_start, zq_done, wrlvl_done, rdlvl_done, deskew_done;
   logic repair_en, err_clear;
   logic [hsl_pkg::DATA_W-1:0] prbs_data;
@@ -86,6 +86,7 @@ module hsl_base_die_lite (
     .loopback     (loopback),
     .prbs_en      (prbs_en),
     .dbi_en       (dbi_en),
+    .dbi_ac       (dbi_ac),
     .phy_bypass   (phy_bypass),
     .train_start  (train_start),
     .zq_done      (zq_done),
@@ -165,6 +166,7 @@ module hsl_base_die_lite (
     .rst_n       (rst_logic_n),
     .cke         (cke),
     .dbi_en      (dbi_en),
+    .dbi_ac      (dbi_ac),
     .phy_bypass  (phy_bypass),
     .repair_en   (repair_en),
     .repair_lane (repair_lane),

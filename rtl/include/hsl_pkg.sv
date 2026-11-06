@@ -74,6 +74,7 @@ package hsl_pkg;
   localparam int CTRL_PRBS_EN      = 3;
   localparam int CTRL_DBI_EN       = 4;
   localparam int CTRL_PHY_BYPASS   = 5;
+  localparam int CTRL_DBI_AC       = 6; // 0: DC rule, 1: AC rule
 
   localparam int TRAIN_START  = 0;
   localparam int TRAIN_ZQ     = 1;

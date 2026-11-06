@@ -23,6 +23,7 @@ module hsl_csr (
   output logic        loopback,
   output logic        prbs_en,
   output logic        dbi_en,
+  output logic        dbi_ac,
   output logic        phy_bypass,
   output logic        train_start,
   output logic        zq_done,
@@ -43,7 +44,7 @@ module hsl_csr (
 );
   import hsl_pkg::*;
 
-  logic [5:0] ctrl;
+  logic [6:0] ctrl;
   logic [31:0] status;
 
   always_ff @(posedge clk or negedge rst_n) begin
@@ -69,7 +70,7 @@ module hsl_csr (
       err_clear   <= 1'b0;
       if (cfg_we) begin
         case (cfg_addr)
-          CSR_CTRL: ctrl <= cfg_wdata[5:0];
+          CSR_CTRL: ctrl <= cfg_wdata[6:0];
           CSR_TRAIN: begin
             train_wait  <= cfg_wdata[15:8];
             train_start <= cfg_wdata[TRAIN_START];
@@ -96,6 +97,7 @@ module hsl_csr (
   assign loopback     = ctrl[CTRL_LOOPBACK];
   assign prbs_en      = ctrl[CTRL_PRBS_EN];
   assign dbi_en       = ctrl[CTRL_DBI_EN];
+  assign dbi_ac       = ctrl[CTRL_DBI_AC];
   assign phy_bypass   = ctrl[CTRL_PHY_BYPASS];
 
   always_comb begin
@@ -110,7 +112,7 @@ module hsl_csr (
     case (cfg_addr)
       CSR_ID:      cfg_rdata = HSL_ID;
       CSR_VERSION: cfg_rdata = HSL_VERSION;
-      CSR_CTRL:    cfg_rdata = {26'h0, ctrl};
+      CSR_CTRL:    cfg_rdata = {25'h0, ctrl};
       CSR_STATUS:  cfg_rdata = status;
       CSR_TRAIN:   cfg_rdata = {16'h0, train_wait, 8'h0};
       CSR_ERRCNT:  cfg_rdata = {16'h0, err_cnt};

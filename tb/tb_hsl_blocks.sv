@@ -1,5 +1,5 @@
 `timescale 1ns/100fs
-// Block-level checks for E4, E7, E8, E9, E10, and the PRBS seed rule.
+// Block-level checks for E4, E7, E8, E9, E10, the PRBS seed rule, and DBI.
 `default_nettype none
 
 module tb_hsl_blocks (
@@ -21,6 +21,7 @@ module tb_hsl_blocks (
     check_t2();
     check_gearbox();
     check_fifo();
+    check_dbi();
     errors = local_errors;
     done = 1'b1;
   end
@@ -500,6 +501,183 @@ module tb_hsl_blocks (
       bump(fgot[1] == 32'h2222_0002, 603);
       bump(fgot[2] == 32'h3333_0003, 604);
       report("[T6]", e0);
+    end
+  endtask
+
+  // ---------------------------------------------------------------------------
+  // T9 unit: hsl_dbi against a serial reference, DC and AC rules. u_dbi_ser
+  // is the AC_SERIAL build on the same inputs; the two must agree everywhere.
+  // ---------------------------------------------------------------------------
+  logic              dbi_en_t;
+  logic              dbi_ac_t;
+  logic [DQ_W-1:0]   dbi_prev_t;
+  logic [DATA_W-1:0] dbi_din_t;
+  logic [DATA_W-1:0] dbi_dout_t;
+  logic [BL-1:0]     dbi_flag_t;
+  logic [DATA_W-1:0] dbi_dout_s;
+  logic [BL-1:0]     dbi_flag_s;
+
+  hsl_dbi u_dbi (
+    .en   (dbi_en_t),
+    .ac   (dbi_ac_t),
+    .prev (dbi_prev_t),
+    .din  (dbi_din_t),
+    .dout (dbi_dout_t),
+    .dbi  (dbi_flag_t)
+  );
+
+  hsl_dbi #(.AC_SERIAL(1'b1)) u_dbi_ser (
+    .en   (dbi_en_t),
+    .ac   (dbi_ac_t),
+    .prev (dbi_prev_t),
+    .din  (dbi_din_t),
+    .dout (dbi_dout_s),
+    .dbi  (dbi_flag_s)
+  );
+
+  // {flags, bytes as sent}, one beat after another as the rule reads.
+  function automatic logic [DATA_W+BL-1:0] dbi_ref(
+    input logic [DATA_W-1:0] w,
+    input logic [DQ_W-1:0]   last,
+    input logic              ac
+  );
+    logic [DATA_W-1:0] enc;
+    logic [BL-1:0]     flg;
+    logic [DQ_W-1:0]   sent;
+    logic [DQ_W-1:0]   cmp;
+    integer            b;
+    begin
+      enc  = w;
+      flg  = '0;
+      sent = last;
+      for (b = 0; b < BL; b = b + 1) begin
+        cmp = ac ? (w[b*DQ_W +: DQ_W] ^ sent) : w[b*DQ_W +: DQ_W];
+        if ($countones(cmp) > DQ_W / 2) begin
+          enc[b*DQ_W +: DQ_W] = ~w[b*DQ_W +: DQ_W];
+          flg[b] = 1'b1;
+        end
+        sent = enc[b*DQ_W +: DQ_W];
+      end
+      dbi_ref = {flg, enc};
+    end
+  endfunction
+
+  task automatic dbi_drive(
+    input logic              en,
+    input logic              ac,
+    input logic [DQ_W-1:0]   prev,
+    input logic [DATA_W-1:0] din
+  );
+    begin
+      dbi_en_t   = en;
+      dbi_ac_t   = ac;
+      dbi_prev_t = prev;
+      dbi_din_t  = din;
+      #1ps;
+    end
+  endtask
+
+  // Decode, then the rule's own bound on every beat: DC at most DQ_W/2 ones,
+  // AC at most DQ_W/2 DQ toggles against the byte sent before it.
+  task automatic dbi_check_beats(input integer tag);
+    integer          b;
+    logic [DQ_W-1:0] sent;
+    begin
+      sent = dbi_prev_t;
+      for (b = 0; b < BL; b = b + 1) begin
+        bump((dbi_dout_t[b*DQ_W +: DQ_W] ^ {DQ_W{dbi_flag_t[b]}}) === dbi_din_t[b*DQ_W +: DQ_W], tag);
+        if (dbi_ac_t) begin
+          bump($countones(dbi_dout_t[b*DQ_W +: DQ_W] ^ sent) <= DQ_W / 2, tag + 1);
+        end else begin
+          bump($countones(dbi_dout_t[b*DQ_W +: DQ_W]) <= DQ_W / 2, tag + 2);
+        end
+        sent = dbi_dout_t[b*DQ_W +: DQ_W];
+      end
+    end
+  endtask
+
+  task automatic check_dbi();
+    integer e0;
+    integer i;
+    integer b;
+    integer m;
+    integer ui;
+    integer tog [0:2];
+    integer one [0:2];
+    integer btg [0:2];
+    logic [DQ_W-1:0]   sent [0:2];
+    logic              fsent [0:2];
+    logic [DATA_W-1:0] w;
+    real    exp_tog [0:2];
+    real    exp_one [0:2];
+    real    got;
+    begin
+      e0 = local_errors;
+
+      // Off is a pass-through.
+      dbi_drive(1'b0, 1'b1, 8'h00, 32'hFFFF_FFFF);
+      bump((dbi_dout_t === 32'hFFFF_FFFF) && (dbi_flag_t === 4'b0000), 900);
+      // DC: 5 ones inverts, 4 ones stays (T5 at the block).
+      dbi_drive(1'b1, 1'b0, 8'h00, 32'h0000_0F1F);
+      bump((dbi_dout_t === 32'h0000_0FE0) && (dbi_flag_t === 4'b0001), 901);
+      // AC, prev = WR header 02: 0F keeps 3 toggles, F0 after 0F would toggle
+      // all 8, so beats 1 and 3 go out inverted and the DQ pins stay at 0F.
+      dbi_drive(1'b1, 1'b1, 8'h02, 32'hF00F_F00F);
+      bump((dbi_dout_t === 32'h0F0F_0F0F) && (dbi_flag_t === 4'b1010), 902);
+      // Same data under DC: every beat has 4 ones, nothing inverts.
+      dbi_drive(1'b1, 1'b0, 8'h02, 32'hF00F_F00F);
+      bump((dbi_dout_t === 32'hF00F_F00F) && (dbi_flag_t === 4'b0000), 903);
+      // AC ties. Beat 0: 4 toggles stays. Beat 2 follows an inverted beat with
+      // r = 4 raw toggles, which is 8 - 4 = 4 on the pins: stays.
+      dbi_drive(1'b1, 1'b1, 8'h00, 32'hDCC3_F00F);
+      bump((dbi_dout_t === 32'h23C3_0F0F) && (dbi_flag_t === 4'b1010), 904);
+      // After an inverted beat, r = 3 raw toggles is 5 on the pins: inverts.
+      dbi_drive(1'b1, 1'b1, 8'h00, 32'h00F7_F00F);
+      bump((dbi_dout_t === 32'h0008_0F0F) && (dbi_flag_t === 4'b0110), 905);
+
+      // Random bursts and prev against the reference, both rules.
+      for (i = 0; i < 4000; i = i + 1) begin
+        dbi_drive(1'b1, i[0], 8'($urandom), $urandom);
+        bump({dbi_flag_t, dbi_dout_t} === dbi_ref(dbi_din_t, dbi_prev_t, dbi_ac_t), 910);
+        bump({dbi_flag_s, dbi_dout_s} === {dbi_flag_t, dbi_dout_t}, 913);
+        dbi_check_beats(911);
+      end
+
+      // A contiguous stream of random bursts (prev = last beat sent), as on a
+      // DQ bus that carries data only. Measured toggles and ones per UI on
+      // DQ + DBI against the binomial expectation for uniform bytes:
+      //   off 4, DC 3.70 + 0.46 DBI, AC 744/256 = 2.91 + 0.46 DBI toggles.
+      exp_tog[0] = 4.0;  exp_tog[1] = 4.164; exp_tog[2] = 3.369;
+      exp_one[0] = 4.0;  exp_one[1] = 3.270; exp_one[2] = 4.363;
+      for (m = 0; m < 3; m = m + 1) begin
+        tog[m] = 0; one[m] = 0; btg[m] = 0; sent[m] = '0; fsent[m] = 1'b0;
+      end
+      ui = 0;
+      for (i = 0; i < 10000; i = i + 1) begin
+        w = $urandom;
+        for (m = 0; m < 3; m = m + 1) begin
+          dbi_drive(m != 0, m == 2, sent[m], w);
+          if (m != 0) dbi_check_beats(912);
+          for (b = 0; b < BL; b = b + 1) begin
+            tog[m] = tog[m] + $countones({dbi_flag_t[b], dbi_dout_t[b*DQ_W +: DQ_W]} ^
+                                         {fsent[m], sent[m]});
+            one[m] = one[m] + $countones({dbi_flag_t[b], dbi_dout_t[b*DQ_W +: DQ_W]});
+            sent[m]  = dbi_dout_t[b*DQ_W +: DQ_W];
+            fsent[m] = dbi_flag_t[b];
+          end
+        end
+        ui = ui + BL;
+      end
+      for (m = 0; m < 3; m = m + 1) begin
+        got = 1.0 * tog[m] / ui;
+        bump((got > exp_tog[m] - 0.05) && (got < exp_tog[m] + 0.05), 920 + m);
+        got = 1.0 * one[m] / ui;
+        bump((got > exp_one[m] - 0.05) && (got < exp_one[m] + 0.05), 925 + m);
+      end
+      $display("[T9] random stream %0d UI, DQ+DBI per UI: toggles off %0.2f dc %0.2f ac %0.2f, ones off %0.2f dc %0.2f ac %0.2f",
+               ui, 1.0 * tog[0] / ui, 1.0 * tog[1] / ui, 1.0 * tog[2] / ui,
+               1.0 * one[0] / ui, 1.0 * one[1] / ui, 1.0 * one[2] / ui);
+      report("[T9] unit", e0);
     end
   endtask
 endmodule
