@@ -1,20 +1,17 @@
 `timescale 1ns/100fs
 // -----------------------------------------------------------------------------
 // hsl_lane_bist
-// Lane test through the memory controller's host port:
-//   ACT, then LB_BURSTS times (WR col 0, RD col 0) with PRBS7 words, then PRE.
-// Each read is compared with the word written just before it. A DQ lane is
-// flagged when any of its BL beats differs, and the flags are sticky for the
-// run. err_bursts counts reads with any mismatch.
-//
-// One column for every pair: in this framer the column (and the ACT row)
-// travel on DQ, so a broken DQ lane also changes the address. Every command
-// then sees the same wrong address, and the mismatch stays on the broken lane
-// instead of spreading through aliased columns.
-//
-// Commands go through hsl_mc_top, so bank timing stays with the scheduler.
-// Start with the host queue empty and loopback off. The top holds the host
-// port while busy. DBI lane faults do not show with DBI off: the two
+// Lane test through the memory controller's request port:
+//   write LB_BURSTS PRBS7 words to columns 0..15 of one DRAM bank and row,
+//   wait until the controller's queues are empty (every write has gone to the
+//   DRAM, so no read is answered from the write queue), read them back and
+//   compare. A DQ lane is flagged when any of its BL beats differs, and the
+//   flags are sticky for the run. err_bursts counts reads with any mismatch.
+// The controller answers writes at once (posted); those answers come first
+// and are only counted. Bank timing, refresh and the bus turnaround stay with
+// the controller.
+// Start with the host quiet, loopback off and the PHY on; the top holds the
+// host port while busy. DBI lane faults do not show with DBI off: the two
 // inversions cancel. This engine diagnoses the 8 DQ lanes.
 // -----------------------------------------------------------------------------
 `default_nettype none
@@ -25,15 +22,14 @@ module hsl_lane_bist (
   input  wire                        start,
   input  wire  [hsl_pkg::BANK_W-1:0] bank,
   input  wire  [hsl_pkg::ROW_W-1:0]  row,
+  input  wire                        q_empty,
 
   output logic                       busy,
-  output logic                       cmd_valid,
-  input  wire                        cmd_ready,
-  output logic [3:0]                 cmd_opc,
-  output logic [hsl_pkg::BANK_W-1:0] cmd_bank,
-  output logic [hsl_pkg::ROW_W-1:0]  cmd_row,
-  output logic [hsl_pkg::COL_W-1:0]  cmd_col,
-  output logic [hsl_pkg::DATA_W-1:0] cmd_wdata,
+  output logic                       req_valid,
+  input  wire                        req_ready,
+  output logic                       req_write,
+  output logic [hsl_pkg::ADDR_W-1:0] req_addr,
+  output logic [hsl_pkg::DATA_W-1:0] req_wdata,
   input  wire                        rsp_valid,
   input  wire  [hsl_pkg::DATA_W-1:0] rsp_rdata,
 
@@ -43,12 +39,16 @@ module hsl_lane_bist (
 );
   import hsl_pkg::*;
 
-  // Command index: 0 ACT, odd WR, even RD, LAST PRE.
-  localparam logic [5:0] LAST = 6'(2 * LB_BURSTS + 1);
-  localparam logic [6:0] SEED = 7'h2D;
+  localparam logic [1:0] P_WR    = 2'd0;
+  localparam logic [1:0] P_DRAIN = 2'd1;
+  localparam logic [1:0] P_RD    = 2'd2;
+  localparam logic [1:0] P_WAIT  = 2'd3;
+  localparam logic [6:0] SEED    = 7'h2D;
+  localparam logic [5:0] N_RSP   = 6'(2 * LB_BURSTS);
 
-  logic [5:0]        idx;
-  logic [4:0]        nrsp;
+  logic [1:0]        phase;
+  logic [4:0]        idx;
+  logic [5:0]        nrsp;
   logic [BANK_W-1:0] bank_r;
   logic [ROW_W-1:0]  row_r;
   logic [DATA_W-1:0] wr_word;
@@ -56,24 +56,20 @@ module hsl_lane_bist (
   logic              unused_bit_wr;
   logic              unused_bit_exp;
 
-  wire fire     = cmd_valid && cmd_ready;
-  wire is_wr    = (idx != 6'd0) && (idx != LAST) && idx[0];
+  wire fire     = req_valid && req_ready;
   wire take_rsp = busy && rsp_valid;
+  wire rd_rsp   = take_rsp && (nrsp >= 6'(LB_BURSTS)); // past the write answers
 
-  assign cmd_valid = busy && (idx <= LAST);
-  assign cmd_opc   = (idx == 6'd0) ? OPC_ACT :
-                     (idx == LAST) ? OPC_PRE :
-                     idx[0]        ? OPC_WR  : OPC_RD;
-  assign cmd_bank  = bank_r;
-  assign cmd_row   = row_r;
-  assign cmd_col   = '0;
-  assign cmd_wdata = wr_word;
+  assign req_valid = busy && ((phase == P_WR) || (phase == P_RD));
+  assign req_write = (phase == P_WR);
+  assign req_addr  = host_addr(bank_r, row_r, idx[COL_W-1:0]);
+  assign req_wdata = wr_word;
 
-  // One PRBS7 word per WR, and the same sequence again for the reads.
+  // One PRBS7 word per write, and the same sequence again for the reads.
   hsl_prbs u_wr_prbs (
     .clk        (clk),
     .rst_n      (rst_n),
-    .en         (fire && is_wr),
+    .en         (fire && req_write),
     .load       (start && !busy),
     .seed       (SEED),
     .bit_o      (unused_bit_wr),
@@ -83,7 +79,7 @@ module hsl_lane_bist (
   hsl_prbs u_exp_prbs (
     .clk        (clk),
     .rst_n      (rst_n),
-    .en         (take_rsp),
+    .en         (rd_rsp),
     .load       (start && !busy),
     .seed       (SEED),
     .bit_o      (unused_bit_exp),
@@ -105,6 +101,7 @@ module hsl_lane_bist (
     if (!rst_n) begin
       busy       <= 1'b0;
       done       <= 1'b0;
+      phase      <= P_WR;
       idx        <= '0;
       nrsp       <= '0;
       bank_r     <= '0;
@@ -115,6 +112,7 @@ module hsl_lane_bist (
       if (start) begin
         busy       <= 1'b1;
         done       <= 1'b0;
+        phase      <= P_WR;
         idx        <= '0;
         nrsp       <= '0;
         bank_r     <= bank;
@@ -124,17 +122,27 @@ module hsl_lane_bist (
       end
     end else begin
       if (fire) begin
-        idx <= idx + 6'd1;
+        if (idx == 5'(LB_BURSTS - 1)) begin
+          idx   <= '0;
+          phase <= req_write ? P_DRAIN : P_WAIT;
+        end else begin
+          idx <= idx + 5'd1;
+        end
+      end
+      if ((phase == P_DRAIN) && q_empty) begin
+        phase <= P_RD;
       end
       if (take_rsp) begin
-        nrsp     <= nrsp + 5'd1;
+        nrsp <= nrsp + 6'd1;
+      end
+      if (rd_rsp) begin
         lane_err <= lane_err | fold(rsp_rdata ^ exp_word);
         if (rsp_rdata != exp_word) begin
           err_bursts <= err_bursts + 5'd1;
         end
       end
-      // Every command sent and every read answered.
-      if ((idx > LAST) && (nrsp == 5'(LB_BURSTS))) begin
+      // Every request sent and answered.
+      if ((phase == P_WAIT) && (nrsp == N_RSP)) begin
         busy <= 1'b0;
         done <= 1'b1;
       end

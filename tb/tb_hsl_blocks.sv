@@ -1,5 +1,7 @@
 `timescale 1ns/100fs
 // Block-level checks for E4, E7, E8, E9, E10, the PRBS seed rule, and DBI.
+// The controller (rtl/mc) has its own regression in the Mini DRAM Controller
+// repo; here it is tested in the chip (tb_hsl_smoke T2, T3).
 `default_nettype none
 
 module tb_hsl_blocks (
@@ -17,8 +19,6 @@ module tb_hsl_blocks (
     check_repair();
     check_deskew();
     check_prbs();
-    check_t3();
-    check_t2();
     check_gearbox();
     check_fifo();
     check_dbi();
@@ -220,180 +220,6 @@ module tb_hsl_blocks (
       bump(ppar !== 32'h0, 803);
       bump(ppar !== first, 804);
       report("[E11] prbs", e0);
-    end
-  endtask
-
-  logic       sclk;
-  logic       srst;
-  logic [3:0] bank_open;
-  logic [3:0] bank_ready;
-  logic       req_valid;
-  logic       req_ready;
-  logic [3:0] req_opc;
-  logic [1:0] req_bank;
-  logic       issue_valid;
-  logic       issue_ready;
-  logic [3:0] issue_opc;
-  logic [1:0] issue_bank;
-
-  initial sclk = 1'b0;
-  always #5 sclk = ~sclk;
-
-  hsl_scheduler u_sch (
-    .clk(sclk),
-    .rst_n(srst),
-    .bank_open(bank_open),
-    .bank_ready(bank_ready),
-    .timing0(TIMING0_DEFAULT),
-    .timing1(TIMING1_DEFAULT),
-    .req_valid(req_valid),
-    .req_ready(req_ready),
-    .req_opc(req_opc),
-    .req_bank(req_bank),
-    .issue_valid(issue_valid),
-    .issue_ready(issue_ready),
-    .issue_opc(issue_opc),
-    .issue_bank(issue_bank)
-  );
-
-  task automatic check_t3();
-    integer e0;
-    begin
-      e0 = local_errors;
-      srst = 1'b0;
-      req_valid = 1'b0;
-      req_opc = OPC_WR;
-      req_bank = 2'd0;
-      issue_ready = 1'b1;
-      bank_open = 4'b0001;
-      bank_ready = 4'b0001;
-      repeat (3) @(posedge sclk);
-      srst = 1'b1;
-      @(negedge sclk);
-      req_valid = 1'b1;
-      // issue_valid is combo and drops on the edge that loads tCCD.
-      #1ps;
-      bump(issue_valid === 1'b1, 301);
-      @(posedge sclk);
-      #1ps;
-      bump(issue_valid === 1'b0, 302);
-      @(posedge sclk);
-      #1ps;
-      bump(issue_valid === 1'b1, 303);
-      req_valid = 1'b0;
-      report("[T3]", e0);
-    end
-  endtask
-
-  logic mclk;
-  logic mrst;
-  logic m_valid;
-  logic m_ready;
-  logic [3:0] m_opc;
-  logic [1:0] m_bank;
-  logic [7:0] m_row;
-  logic [3:0] m_col;
-  logic [31:0] m_wdata;
-  logic m_rsp_v;
-  logic [31:0] m_rsp_d;
-  logic m_rsp_e;
-  logic p_valid;
-  logic [3:0] p_opc;
-  logic [1:0] p_bank;
-  logic [7:0] p_row;
-  logic [3:0] p_col;
-  logic [31:0] p_wdata;
-
-  initial mclk = 1'b0;
-  always #5 mclk = ~mclk;
-
-  hsl_mc_top u_mc (
-    .clk(mclk),
-    .rst_n(mrst),
-    .mission_mode(1'b1),
-    .timing0(TIMING0_DEFAULT),
-    .timing1(TIMING1_DEFAULT),
-    .cmd_valid(m_valid),
-    .cmd_ready(m_ready),
-    .cmd_opc(m_opc),
-    .cmd_bank(m_bank),
-    .cmd_row(m_row),
-    .cmd_col(m_col),
-    .cmd_wdata(m_wdata),
-    .rsp_valid(m_rsp_v),
-    .rsp_rdata(m_rsp_d),
-    .rsp_err(m_rsp_e),
-    .phy_valid(p_valid),
-    .phy_ready(1'b1),
-    .phy_opc(p_opc),
-    .phy_bank(p_bank),
-    .phy_row(p_row),
-    .phy_col(p_col),
-    .phy_wdata(p_wdata),
-    .phy_rsp_valid(1'b0),
-    .phy_rsp_rdata('0)
-  );
-
-  task automatic mc_push(input logic [3:0] opc);
-    begin
-      @(negedge mclk);
-      m_valid = 1'b1;
-      m_opc = opc;
-      @(posedge mclk);
-      #1ps;
-      bump(m_ready === 1'b1, 210);
-      @(negedge mclk);
-      m_valid = 1'b0;
-    end
-  endtask
-
-  task automatic wait_issue(input logic [3:0] opc, input integer tag, input integer limit);
-    integer guard;
-    begin
-      guard = 0;
-      // phy_valid is high for the cycle before the pop edge, so sample then.
-      while (!((p_valid === 1'b1) && (p_opc === opc)) && (guard < limit)) begin
-        @(negedge mclk);
-        guard = guard + 1;
-      end
-      bump((p_valid === 1'b1) && (p_opc === opc), tag);
-    end
-  endtask
-
-  task automatic check_t2();
-    integer k;
-    integer e0;
-    begin
-      e0 = local_errors;
-      mrst = 1'b0;
-      m_valid = 1'b0;
-      m_opc = OPC_ACT;
-      m_bank = 2'd0;
-      m_row = 8'h3;
-      m_col = 4'h1;
-      m_wdata = 32'h0;
-      repeat (3) @(posedge mclk);
-      mrst = 1'b1;
-      @(negedge mclk);
-      mc_push(OPC_ACT);
-      wait_issue(OPC_ACT, 211, 10);
-      mc_push(OPC_RD);
-      for (k = 0; k < T_RCD; k = k + 1) begin
-        @(negedge mclk);
-        bump(p_valid === 1'b0, 212);
-      end
-      wait_issue(OPC_RD, 213, 80);
-      // Let tRTP expire, then PRE, then prove ACT is refused for tRP cycles.
-      repeat (8) @(posedge mclk);
-      mc_push(OPC_PRE);
-      wait_issue(OPC_PRE, 214, 40);
-      mc_push(OPC_ACT);
-      // Two samples stay inside tRP. The closing edge is tRP clocks after PRE.
-      for (k = 0; k < (int'(T_RP) - 2); k = k + 1) begin
-        @(negedge mclk);
-        bump(p_valid === 1'b0, 215);
-      end
-      report("[T2]", e0);
     end
   endtask
 

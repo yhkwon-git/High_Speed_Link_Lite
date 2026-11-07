@@ -2,10 +2,13 @@
 // High-Speed Link Lite
 // Study-scale digital model of an HBM-style base-die link.
 // Parameters below are project choices, not JEDEC values.
+// The memory controller is Mini DRAM Controller v4 (rtl/mc/, dram_pkg); its
+// geometry and timing come from dram_pkg, which is compiled first.
 package hsl_pkg;
+  import dram_pkg::*;
 
   localparam logic [31:0] HSL_ID      = 32'h4853_4C31; // ASCII "HSL1"
-  localparam logic [31:0] HSL_VERSION = 32'h0000_0100; // v0.1.0
+  localparam logic [31:0] HSL_VERSION = 32'h0000_0300; // v0.3.0: MDC v4 + mission PHY
 
   // Sim/SDC periods after E7. See docs/02_architecture.md and docs/e12_clocks.md.
   // Controller 800 MHz, PHY/CK 1.6 GHz, ratio 2.
@@ -20,50 +23,46 @@ package hsl_pkg;
   localparam int LANE_N = DQ_W + DBI_W;         // 9 logical lanes: {DBI, DQ}
   localparam int BL     = 4;
   localparam int DDR_BITS = 2;                  // bits per DQ per CK
-  localparam int BANK_N = 4;
-  localparam int BANK_W = 2;
-  localparam int ROW_W  = 8;
-  localparam int COL_W  = 4;
-  localparam int DATA_W = DQ_W * BL;            // 32, one burst
+  localparam int BANK_N = NUM_BANKS;            // 4, from dram_pkg
+  localparam int BANK_W = BANK_BITS;            // 2
+  localparam int ROW_W  = ROW_BITS;             // 8
+  localparam int COL_W  = COL_BITS;             // 4
+  localparam int ADDR_W = ADDR_BITS;            // 14, host word address
+  localparam int DATA_W = DQ_W * BL;            // 32, one burst = DATA_BITS
 
-  // pin_dq layout, base die toward the channel:
+  // The controller's address map (mem_ctrl ADDR_MAP): host word address
+  // {row, bank ^ row[1:0], col}. XOR is its own inverse, so host_addr gives
+  // the host word that lands on a chosen bank, row and column.
+  localparam int MC_ADDR_MAP = MAP_XOR;
+
+  function automatic logic [ADDR_W-1:0] host_addr(
+    input logic [BANK_W-1:0] bank,
+    input logic [ROW_W-1:0]  row,
+    input logic [COL_W-1:0]  col
+  );
+    return {row, bank ^ row[BANK_W-1:0], col};
+  endfunction
+
+  // One symbol (UI) on the pins, base die toward the channel:
   //   [DQ_W-1:0]                 DQ
   //   [DQ_W+DBI_W-1:DQ_W]        DBI
   //   [PIN_W-1:DQ_W+DBI_W]       redundant DQ
   localparam int DBI_LSB = DQ_W;
   localparam int RED_LSB = DQ_W + DBI_W;
 
-  // Mission datapath (CTRL.phy_en, phy_bypass off). Commands leave on two CA
-  // buses at the controller clock; data leaves as PHY beats of DDR_BITS UI.
-  //   pin_rca = {rcmd[1:0], bank, row}   row bus: ACT, PRE
-  //   pin_cca = {ccmd[1:0], bank, col}   column bus: RD, WR
+  // Commands leave on two CA buses at the controller clock with the
+  // controller's dram_cmd_e codes; data leaves as PHY beats of DDR_BITS UI.
+  //   pin_rca = {rcmd[2:0], bank, row}       row bus: ACT, PRE, PREA, REF, REFPB
+  //   pin_cca = {ccmd[2:0], bank, col, ap}   column bus: RD, WR, auto-precharge
   //   beat    = DDR_BITS symbols of PIN_W pins, UI 0 in the low bits
-  localparam int RCA_W = 2 + BANK_W + ROW_W;  // 12
-  localparam int CCA_W = 2 + BANK_W + COL_W;  // 8
-  localparam int BEAT_W = DDR_BITS * PIN_W;   // 20
-  localparam int WORD_PW = BL * PIN_W;        // 40, one burst on the pins
-  localparam logic [1:0] RCMD_NOP = 2'd0;
-  localparam logic [1:0] RCMD_ACT = 2'd1;
-  localparam logic [1:0] RCMD_PRE = 2'd2;
-  localparam logic [1:0] CCMD_NOP = 2'd0;
-  localparam logic [1:0] CCMD_RD  = 2'd1;
-  localparam logic [1:0] CCMD_WR  = 2'd2;
+  localparam int RCA_W   = 3 + BANK_W + ROW_W;      // 13
+  localparam int CCA_W   = 3 + BANK_W + COL_W + 1;  // 10
+  localparam int BEAT_W  = DDR_BITS * PIN_W;        // 20
+  localparam int WORD_PW = BL * PIN_W;              // 40, one burst on the pins
 
   // Burst layout is beat-major. Beat 0 is the first UI on the pin.
   //   beat b occupies [b*DQ_W +: DQ_W], and bit i inside a beat is DQi.
   // DBI flag [b] belongs to that beat. See docs/03_microarchitecture.md.
-
-  localparam logic [3:0] OPC_NOP  = 4'h0;
-  localparam logic [3:0] OPC_ACT  = 4'h1;
-  localparam logic [3:0] OPC_PRE  = 4'h2;
-  localparam logic [3:0] OPC_PREA = 4'h3;
-  localparam logic [3:0] OPC_RD   = 4'h4;
-  localparam logic [3:0] OPC_WR   = 4'h5;
-  localparam logic [3:0] OPC_REF  = 4'h6;
-  localparam logic [3:0] OPC_REFA = 4'h7;
-  localparam logic [3:0] OPC_MRS  = 4'h8;
-  localparam logic [3:0] OPC_PDE  = 4'h9;
-  localparam logic [3:0] OPC_PDX  = 4'hA;
 
   localparam logic [3:0] TR_RESET   = 4'd0;
   localparam logic [3:0] TR_CKE     = 4'd1;
@@ -75,15 +74,15 @@ package hsl_pkg;
   localparam logic [3:0] TR_WRTRAIN = 4'd7;
   localparam logic [3:0] TR_MISSION = 4'd8;
 
-  localparam logic [7:0] CSR_ID      = 8'h00;
-  localparam logic [7:0] CSR_VERSION = 8'h04;
-  localparam logic [7:0] CSR_CTRL    = 8'h08;
-  localparam logic [7:0] CSR_STATUS  = 8'h0C;
-  localparam logic [7:0] CSR_TRAIN   = 8'h10;
-  localparam logic [7:0] CSR_ERRCNT  = 8'h14;
-  localparam logic [7:0] CSR_REMAP   = 8'h18;
-  localparam logic [7:0] CSR_TIMING0 = 8'h1C;
-  localparam logic [7:0] CSR_TIMING1 = 8'h20;
+  localparam logic [7:0] CSR_ID        = 8'h00;
+  localparam logic [7:0] CSR_VERSION   = 8'h04;
+  localparam logic [7:0] CSR_CTRL      = 8'h08;
+  localparam logic [7:0] CSR_STATUS    = 8'h0C;
+  localparam logic [7:0] CSR_TRAIN     = 8'h10;
+  localparam logic [7:0] CSR_ERRCNT    = 8'h14;
+  localparam logic [7:0] CSR_REMAP     = 8'h18;
+  localparam logic [7:0] CSR_TIMING0   = 8'h1C;
+  localparam logic [7:0] CSR_TIMING1   = 8'h20;
   localparam logic [7:0] CSR_LANE_BIST = 8'h24;
   localparam logic [7:0] CSR_RDTRAIN   = 8'h28;
 
@@ -92,9 +91,9 @@ package hsl_pkg;
   localparam int CTRL_LOOPBACK     = 2;
   localparam int CTRL_PRBS_EN      = 3;
   localparam int CTRL_DBI_EN       = 4;
-  localparam int CTRL_PHY_BYPASS   = 5;
+  // bit 5 was phy_bypass (the v0.1 framer); reserved, reads 0
   localparam int CTRL_DBI_AC       = 6; // 0: DC rule, 1: AC rule
-  localparam int CTRL_PHY_EN       = 7; // mission datapath (CA pins, DDR beats)
+  localparam int CTRL_PHY_EN       = 7; // PHY on: CK out, commands and data to the pins
 
   localparam int TRAIN_START  = 0;
   localparam int TRAIN_ZQ     = 1;
@@ -108,11 +107,12 @@ package hsl_pkg;
   localparam int STAT_MISSION    = 6;
   localparam int STAT_SOFT_RST   = 7;
 
-  // LANE_BIST write: [0] start, [5:4] bank, [15:8] row.
+  // LANE_BIST write: [0] start, [5:4] bank, [15:8] row: the BIST uses the 16
+  //                  columns of that DRAM bank and row (host_addr).
   // LANE_BIST read:  [0] busy, [1] done, [2] pass, [3] one lane failed,
   //                  [7:4] lowest failing DQ lane, [15:8] DQ lane errors,
   //                  [20:16] bursts with a mismatch.
-  localparam int LB_BURSTS = 16; // WR/RD pairs per lane BIST run
+  localparam int LB_BURSTS = 16; // words written, then read back, per run
 
   // Read leveling: one delay-line code per DQ lane toward the analog PHY.
   // RDTRAIN write: [0] start, [6:4] lane to read back.
@@ -124,19 +124,11 @@ package hsl_pkg;
   localparam logic [RX_DLY_W-1:0] RX_DLY_MAX = 5'd31;
   localparam logic [5:0]          RX_EYE_MIN = 6'd2;  // narrowest run that counts
 
-  // Study timings in controller clocks. Not a JEDEC AC table.
-  localparam logic [7:0] T_RCD = 8'd4;
-  localparam logic [7:0] T_RP  = 8'd4;
-  localparam logic [7:0] T_RAS = 8'd10;
-  localparam logic [7:0] T_CCD = 8'd2;
-  localparam logic [7:0] T_WTR = 8'd4;
-  localparam logic [7:0] T_WR  = 8'd4;
-  localparam logic [7:0] T_RTP = 8'd3;
-  localparam logic [7:0] T_RFC = 8'd20;
-
-  // TIMING0: {tCCD, tRAS, tRP, tRCD}, tRCD in [7:0]
-  // TIMING1: {tRFC, tRTP, tWR, tWTR}, tWTR in [7:0]
-  localparam logic [31:0] TIMING0_DEFAULT = {T_CCD, T_RAS, T_RP, T_RCD};
-  localparam logic [31:0] TIMING1_DEFAULT = {T_RFC, T_RTP, T_WR, T_WTR};
+  // TIMING0/1 are read-only: the controller's timings are dram_pkg constants
+  // (controller clocks, a scaled model, not a JEDEC AC table).
+  // TIMING0: {tCCD_L, tRAS, tRP, tRCD}, tRCD in [7:0]
+  // TIMING1: {tRFC, tRTP, tWR, tWTR_L}, tWTR_L in [7:0]
+  localparam logic [31:0] TIMING0_DEFAULT = {8'(tCCD_L), 8'(tRAS), 8'(tRP), 8'(tRCD)};
+  localparam logic [31:0] TIMING1_DEFAULT = {8'(tRFC), 8'(tRTP), 8'(tWR), 8'(tWTR_L)};
 
 endpackage

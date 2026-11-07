@@ -5,7 +5,9 @@
 //
 // soft_rst is produced here and must not reset this block. Otherwise the bit
 // clears itself and the datapath cannot be held in reset.
-// A write to ERRCNT is a clear pulse. ID, VERSION, and STATUS ignore writes.
+// A write to ERRCNT is a clear pulse. ID, VERSION, STATUS and TIMING0/1 ignore
+// writes: the timings are the controller's dram_pkg constants. CTRL bit 5
+// (the old phy_bypass) is reserved and reads 0.
 // A write to LANE_BIST with bit 0 set starts a lane test; reads return its
 // status. RDTRAIN works the same way for read leveling and reads back one
 // lane's result, chosen by [6:4] of the last write (layouts in hsl_pkg).
@@ -28,7 +30,6 @@ module hsl_csr (
   output logic        dbi_en,
   output logic        dbi_ac,
   output logic        phy_en,
-  output logic        phy_bypass,
   output logic        train_start,
   output logic        zq_done,
   output logic        wrlvl_done,
@@ -38,8 +39,6 @@ module hsl_csr (
   output logic        repair_en,
   output logic [3:0]  repair_lane,
   output logic        err_clear,
-  output logic [31:0] timing0,
-  output logic [31:0] timing1,
   output logic        lb_start,
   output logic [1:0]  lb_bank,
   output logic [7:0]  lb_row,
@@ -83,8 +82,6 @@ module hsl_csr (
       repair_en   <= 1'b0;
       repair_lane <= 4'h0;
       err_clear   <= 1'b0;
-      timing0     <= TIMING0_DEFAULT;
-      timing1     <= TIMING1_DEFAULT;
       lb_start    <= 1'b0;
       lb_bank     <= '0;
       lb_row      <= '0;
@@ -101,7 +98,7 @@ module hsl_csr (
       rt_start    <= 1'b0;
       if (cfg_we) begin
         case (cfg_addr)
-          CSR_CTRL: ctrl <= cfg_wdata[7:0];
+          CSR_CTRL: ctrl <= cfg_wdata[7:0] & 8'hDF;
           CSR_TRAIN: begin
             train_wait  <= cfg_wdata[15:8];
             train_start <= cfg_wdata[TRAIN_START];
@@ -115,8 +112,6 @@ module hsl_csr (
             repair_en   <= cfg_wdata[0];
             repair_lane <= cfg_wdata[7:4];
           end
-          CSR_TIMING0: timing0 <= cfg_wdata;
-          CSR_TIMING1: timing1 <= cfg_wdata;
           CSR_LANE_BIST: begin
             lb_start <= cfg_wdata[0];
             lb_bank  <= cfg_wdata[5:4];
@@ -139,7 +134,6 @@ module hsl_csr (
   assign dbi_en       = ctrl[CTRL_DBI_EN];
   assign dbi_ac       = ctrl[CTRL_DBI_AC];
   assign phy_en       = ctrl[CTRL_PHY_EN];
-  assign phy_bypass   = ctrl[CTRL_PHY_BYPASS];
 
   always_comb begin
     status = '0;
@@ -188,8 +182,8 @@ module hsl_csr (
       CSR_TRAIN:   cfg_rdata = {16'h0, train_wait, 8'h0};
       CSR_ERRCNT:  cfg_rdata = {16'h0, err_cnt};
       CSR_REMAP:   cfg_rdata = {24'h0, repair_lane, 3'h0, repair_en};
-      CSR_TIMING0: cfg_rdata = timing0;
-      CSR_TIMING1: cfg_rdata = timing1;
+      CSR_TIMING0: cfg_rdata = TIMING0_DEFAULT;
+      CSR_TIMING1: cfg_rdata = TIMING1_DEFAULT;
       CSR_LANE_BIST: cfg_rdata = lb_status;
       CSR_RDTRAIN:   cfg_rdata = rt_status;
       default:     cfg_rdata = 32'h0;

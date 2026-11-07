@@ -40,27 +40,20 @@ set_input_delay -clock clk 0.5 [get_ports {
   cfg_we
   cfg_addr
   cfg_wdata
-  cmd_valid
-  cmd_opc
-  cmd_bank
-  cmd_row
-  cmd_col
-  cmd_wdata
-  pin_dq_i
-  pin_dqs_i
+  req_valid
+  req_write
+  req_addr
+  req_wdata
+  rsp_ready
 }]
 
 set_output_delay -clock clk 0.5 [get_ports {
   cfg_rdata
-  cmd_ready
+  req_ready
   rsp_valid
   rsp_rdata
   rsp_err
   pin_cke
-  pin_ca
-  pin_dq_o
-  pin_dq_oe
-  pin_dqs_o
   pin_rca
   pin_cca
   rx_dly_code

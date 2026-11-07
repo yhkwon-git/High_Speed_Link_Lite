@@ -1,55 +1,66 @@
 `timescale 1ns/100fs
 // -----------------------------------------------------------------------------
 // hsl_phy_mis
-// Mission datapath, used when CTRL.phy_en is set and phy_bypass is off.
+// PHY datapath behind the controller's DFI-style interface (on = CTRL.phy_en).
 //
-// Command: an issued command leaves on the row CA bus (ACT, PRE) or the column
-// CA bus (RD, WR) for one controller clock. DQ carries data only.
-// Write:   the post-DBI burst goes through the lane shift (all BL symbols)
-//          into the TX gear and leaves as two PHY beats of DDR_BITS UI, with
-//          a WDQS pattern, starting half a controller clock after the WR.
-// Read:    the DRAM side sends beats with RDQS (CK delayed by tDQSCK). Two
-//          beats are captured on RDQS, cross to the controller clock through
-//          the Gray FIFO, and are unshifted and DBI-decoded into the response.
-// Loopback answers a RD with lb_data and sends no CA, as the bypass path does.
+// Command: each controller clock the row command (ACT, PRE, PREA, REF, REFPB)
+//          and the column command (RD, WR, with auto-precharge) leave on their
+//          own CA pins, one clock later, with the controller's dram_cmd_e
+//          codes. DQ carries data only.
+// Write:   the burst comes with wrdata_en, WL clocks after its WR. After DBI it
+//          goes through the lane shift (all BL symbols) into the TX gear and
+//          leaves as two PHY beats of DDR_BITS UI with a WDQS pattern, so the
+//          data keeps its WL distance from the WR on the pins (plus half a
+//          clock in the gear).
+// Read:    the DRAM side sends two beats with RDQS (CK delayed by tDQSCK).
+//          They are captured on RDQS, cross to the controller clock through the
+//          Gray FIFO, and are unshifted and DBI-decoded into rddata_valid /
+//          rddata. The latency is not fixed; the controller counts reads in
+//          flight on rddata_valid and only needs the order kept.
+// Loopback answers a RD with lb_data the next clock and sends no CA for it.
 //
-// ac_prev is the DBI-AC reference for a WR issued this clock: the last byte of
-// the WR issued the clock before (its beats follow directly), otherwise 0, the
-// idle bus.
+// ac_prev is the DBI-AC reference for write data in this clock: the last byte
+// of the write data of the clock before (its beats follow directly), or 0,
+// the idle bus.
 // -----------------------------------------------------------------------------
 `default_nettype none
 
 module hsl_phy_mis (
-  input  wire                         clk,
-  input  wire                         clk_phy,
-  input  wire                         rst_n,
+  input  wire                          clk,
+  input  wire                          clk_phy,
+  input  wire                          rst_n,
+  input  wire                          on,
 
-  input  wire                         fire,
-  input  wire  [3:0]                  opc,
-  input  wire  [hsl_pkg::BANK_W-1:0]  bank,
-  input  wire  [hsl_pkg::ROW_W-1:0]   row,
-  input  wire  [hsl_pkg::COL_W-1:0]   col,
-  input  wire  [hsl_pkg::DATA_W-1:0]  wdata,
-  input  wire  [hsl_pkg::BL-1:0]      dbi_flags,
-  input  wire                         loopback,
-  input  wire  [hsl_pkg::DATA_W-1:0]  lb_data,
-  input  wire                         repair_en,
-  input  wire  [3:0]                  repair_lane,
-  output logic [hsl_pkg::DQ_W-1:0]    ac_prev,
+  input  dram_pkg::dram_cmd_e          rcmd,
+  input  wire  [hsl_pkg::BANK_W-1:0]   rbank,
+  input  wire  [hsl_pkg::ROW_W-1:0]    row,
+  input  dram_pkg::dram_cmd_e          ccmd,
+  input  wire  [hsl_pkg::BANK_W-1:0]   cbank,
+  input  wire  [hsl_pkg::COL_W-1:0]    col,
+  input  wire                          ap,
+  input  wire                          wrdata_en,
+  input  wire  [hsl_pkg::DATA_W-1:0]   wdata,
+  input  wire  [hsl_pkg::BL-1:0]       dbi_flags,
+  input  wire                          loopback,
+  input  wire  [hsl_pkg::DATA_W-1:0]   lb_data,
+  input  wire                          repair_en,
+  input  wire  [3:0]                   repair_lane,
+  output logic [hsl_pkg::DQ_W-1:0]     ac_prev,
 
-  output logic [hsl_pkg::RCA_W-1:0]   rca,
-  output logic [hsl_pkg::CCA_W-1:0]   cca,
-  output logic [hsl_pkg::BEAT_W-1:0]  tx_beat,
+  output logic [hsl_pkg::RCA_W-1:0]    rca,
+  output logic [hsl_pkg::CCA_W-1:0]    cca,
+  output logic [hsl_pkg::BEAT_W-1:0]   tx_beat,
   output logic [hsl_pkg::DDR_BITS-1:0] tx_dqs,
-  output logic                        tx_dv,
-  input  wire                         rdqs,
-  input  wire  [hsl_pkg::BEAT_W-1:0]  rx_beat,
-  input  wire                         rx_dv,
+  output logic                         tx_dv,
+  input  wire                          rdqs,
+  input  wire  [hsl_pkg::BEAT_W-1:0]   rx_beat,
+  input  wire                          rx_dv,
 
-  output logic                        rsp_valid,
-  output logic [hsl_pkg::DATA_W-1:0]  rsp_rdata
+  output logic                         rddata_valid,
+  output logic [hsl_pkg::DATA_W-1:0]   rddata
 );
   import hsl_pkg::*;
+  import dram_pkg::*;
 
   logic [BL*LANE_N-1:0]  tx_sym;   // {DBI, DQ} per beat, beat 0 low
   logic [WORD_PW-1:0]    tx_pins;
@@ -65,7 +76,7 @@ module hsl_phy_mis (
   logic [BL*LANE_N-1:0]  rx_sym;
   logic [DATA_W-1:0]     rx_word;
 
-  wire lb_rd = fire && (opc == OPC_RD) && loopback;
+  wire lb_rd = on && loopback && (ccmd == CMD_RD);
 
   integer bi;
   always_comb begin
@@ -87,34 +98,33 @@ module hsl_phy_mis (
     .rx_l (rx_sym)
   );
 
-  // Command and write word, one controller clock each.
+  // Commands and write data, one controller clock each.
   always_ff @(posedge clk or negedge rst_n) begin
     if (!rst_n) begin
-      rca       <= '0;
-      cca       <= '0;
+      rca       <= {CMD_NOP, {(RCA_W-3){1'b0}}};
+      cca       <= {CMD_NOP, {(CCA_W-3){1'b0}}};
       tx_word   <= '0;
       tx_wv     <= 1'b0;
       last_wr   <= 1'b0;
       last_byte <= '0;
     end else begin
-      rca     <= {RCMD_NOP, {(RCA_W-2){1'b0}}};
-      cca     <= {CCMD_NOP, {(CCA_W-2){1'b0}}};
+      rca     <= {CMD_NOP, {(RCA_W-3){1'b0}}};
+      cca     <= {CMD_NOP, {(CCA_W-3){1'b0}}};
       tx_wv   <= 1'b0;
       last_wr <= 1'b0;
-      if (fire) begin
-        case (opc)
-          OPC_ACT: rca <= {RCMD_ACT, bank, row};
-          OPC_PRE: rca <= {RCMD_PRE, bank, row};
-          OPC_RD:  if (!loopback) cca <= {CCMD_RD, bank, col};
-          OPC_WR: begin
-            cca       <= {CCMD_WR, bank, col};
-            tx_word   <= tx_pins;
-            tx_wv     <= 1'b1;
-            last_wr   <= 1'b1;
-            last_byte <= wdata[DATA_W-1 -: DQ_W];
-          end
-          default: ;
-        endcase
+      if (on) begin
+        if (rcmd != CMD_NOP) begin
+          rca <= {rcmd, rbank, row};
+        end
+        if ((ccmd != CMD_NOP) && !lb_rd) begin
+          cca <= {ccmd, cbank, col, ap};
+        end
+        if (wrdata_en) begin
+          tx_word   <= tx_pins;
+          tx_wv     <= 1'b1;
+          last_wr   <= 1'b1;
+          last_byte <= wdata[DATA_W-1 -: DQ_W];
+        end
       end
     end
   end
@@ -162,16 +172,16 @@ module hsl_phy_mis (
 
   always_ff @(posedge clk or negedge rst_n) begin
     if (!rst_n) begin
-      rsp_valid <= 1'b0;
-      rsp_rdata <= '0;
+      rddata_valid <= 1'b0;
+      rddata       <= '0;
     end else begin
-      rsp_valid <= 1'b0;
+      rddata_valid <= 1'b0;
       if (lb_rd) begin
-        rsp_valid <= 1'b1;
-        rsp_rdata <= lb_data;
+        rddata_valid <= 1'b1;
+        rddata       <= lb_data;
       end else if (!fifo_empty) begin
-        rsp_valid <= 1'b1;
-        rsp_rdata <= rx_word;
+        rddata_valid <= 1'b1;
+        rddata       <= rx_word;
       end
     end
   end

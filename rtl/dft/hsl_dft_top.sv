@@ -1,12 +1,12 @@
 `timescale 1ns/100fs
 // -----------------------------------------------------------------------------
 // hsl_dft_top
-// Parallel loopback compare. When prbs_en is set, each tx_valid beat is
-// checked against the PRBS word. loopback selects the TX beat; otherwise the
+// Parallel loopback compare. When prbs_en is set, each write burst the PHY
+// sends (tx_valid) is checked against the PRBS word. loopback selects the TX beat; otherwise the
 // expected pin return is 0 in this study hook, so a mismatch counts.
 // Pin-level loopback is not this block.
-// hsl_lane_bist drives the controller's host port while it runs and checks
-// the read data per DQ lane.
+// hsl_lane_bist drives the controller's request port while it runs and
+// checks the read data per DQ lane.
 // -----------------------------------------------------------------------------
 `default_nettype none
 
@@ -25,14 +25,13 @@ module hsl_dft_top (
   input  wire                        lb_start,
   input  wire  [hsl_pkg::BANK_W-1:0] lb_bank,
   input  wire  [hsl_pkg::ROW_W-1:0]  lb_row,
+  input  wire                        lb_q_empty,
   output logic                       lb_busy,
-  output logic                       lb_cmd_valid,
-  input  wire                        lb_cmd_ready,
-  output logic [3:0]                 lb_cmd_opc,
-  output logic [hsl_pkg::BANK_W-1:0] lb_cmd_bank,
-  output logic [hsl_pkg::ROW_W-1:0]  lb_cmd_row,
-  output logic [hsl_pkg::COL_W-1:0]  lb_cmd_col,
-  output logic [hsl_pkg::DATA_W-1:0] lb_cmd_wdata,
+  output logic                       lb_req_valid,
+  input  wire                        lb_req_ready,
+  output logic                       lb_req_write,
+  output logic [hsl_pkg::ADDR_W-1:0] lb_req_addr,
+  output logic [hsl_pkg::DATA_W-1:0] lb_req_wdata,
   input  wire                        lb_rsp_valid,
   input  wire  [hsl_pkg::DATA_W-1:0] lb_rsp_rdata,
   output logic                       lb_done,
@@ -78,14 +77,13 @@ module hsl_dft_top (
     .start      (lb_start),
     .bank       (lb_bank),
     .row        (lb_row),
+    .q_empty    (lb_q_empty),
     .busy       (lb_busy),
-    .cmd_valid  (lb_cmd_valid),
-    .cmd_ready  (lb_cmd_ready),
-    .cmd_opc    (lb_cmd_opc),
-    .cmd_bank   (lb_cmd_bank),
-    .cmd_row    (lb_cmd_row),
-    .cmd_col    (lb_cmd_col),
-    .cmd_wdata  (lb_cmd_wdata),
+    .req_valid  (lb_req_valid),
+    .req_ready  (lb_req_ready),
+    .req_write  (lb_req_write),
+    .req_addr   (lb_req_addr),
+    .req_wdata  (lb_req_wdata),
     .rsp_valid  (lb_rsp_valid),
     .rsp_rdata  (lb_rsp_rdata),
     .done       (lb_done),

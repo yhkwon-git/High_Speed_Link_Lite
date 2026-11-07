@@ -1,54 +1,63 @@
 `timescale 1ns/100fs
 // -----------------------------------------------------------------------------
 // dram_channel_behav
-// Samples the base-die pins on negedge clk. Protocol is the phy_bypass framer
-// in hsl_phy_tx: ACT/PRE are one strobe, WR is a header plus BL beats, RD
-// drives BL bytes back. Stores one burst per {bank, open row, col}.
+// Channel model behind the base-die pins. Stores one burst per
+// {bank, row, col}.
 //
-// WR data is decoded by its DBI pin whatever the mode. RD data is encoded by
-// mr_dbi_en / mr_dbi_ac, which stand in for the DRAM mode register (this
-// framer has no MRS). The encoder below is the plain serial rule, written
-// apart from rtl/phy/hsl_dbi.sv so it can check that block's RX side.
+// Commands: pin_rca (ACT, PRE, PREA, REF, REFPB) and pin_cca (RD, WR, with
+// auto-precharge) carry the controller's dram_cmd_e codes, sampled on negedge
+// clk while pin_cke is high. The column bus carries no row: RD and WR use the
+// bank's open row. pin_cke low (the controller in reset or training) closes
+// every bank; the stored data stays.
+//
+// Checks, counted for the testbench:
+//   mis_err  protocol: ACT to an open bank, RD/WR to a closed one, REF or
+//            REFPB to an open bank, a command on the wrong bus, a write burst
+//            with no WR, a read queue overflow
+//   tim_err  same-bank timing at the pins in controller clocks: tRCD, tRP,
+//            tRAS, tRC, tRTP, write recovery (WL + 1 + tWR), tRFCpb, tRFC.
+//            Auto-precharge closes the bank on the first edge a PRE would be
+//            legal. Channel rules (tCCD, tRRD, tFAW, tWTR, tRTW) are the
+//            controller repo's model's job.
+//   hz_err   a RD that reaches a {bank, row, col} whose write data has not
+//            arrived yet
+//   wdqs_err WDQS not toggling with the write beats
+//
+// Write data arrives as two PHY beats after the WR, sampled in the middle of
+// each beat (negedge pin_ck), and is stored at the oldest WR still waiting
+// for data, with the row that was open when the WR came. It is decoded by its
+// DBI pin whatever the mode.
+//
+// Read data leaves RL_RDQS RDQS cycles after the RD, as two beats launched on
+// the falling RDQS edge (the chip captures on the rising one). RDQS is CK
+// delayed by tDQSCK. It is encoded by mr_dbi_en / mr_dbi_ac, which stand in
+// for the DRAM mode register. The encoder below is the plain serial rule,
+// written apart from rtl/phy/hsl_dbi.sv so it can check that block's RX side.
 //
 // Lane repair on the DRAM side: mr_repair_en / mr_repair_lane give the same
 // shift as rtl/phy/hsl_lane_shift.sv (pin k idles, lanes from k up use the
-// next pin, RED carries the last one). It is written again as loops here and
-// applies to every symbol, headers included, in both directions.
+// next pin, RED carries the last one), written again as loops here.
 //
 // Read eye: rx_dly is the chip's delay-line code per DQ lane. Inside
 // [eye_lo, eye_hi] a lane samples its own UI; before the window it samples
 // the UI before, after the window the UI after (0 outside the burst, where the
 // bus idles). This stands in for the analog delay line and sampler, in the
 // logical lane domain (before the repair shift).
-//
-// Mission path (CTRL.phy_en): commands arrive on pin_rca / pin_cca, sampled on
-// negedge clk like the bypass strobes. Write data arrives as two PHY beats
-// right after the WR, sampled in the middle of each beat (negedge pin_ck);
-// WDQS must toggle with them. RDQS is CK delayed by TDQSCK. Read data leaves
-// RL_RDQS RDQS cycles after the RD, as two beats launched on the falling RDQS
-// edge (the chip captures on the rising one). Errors on this path count in
-// wdqs_err and mis_err; the testbench checks them.
 // -----------------------------------------------------------------------------
 `default_nettype none
 
 module dram_channel_behav (
-  input  wire                       clk,
-  input  wire                       rst_n,
-  input  wire                       pin_ck,
-  input  wire                       pin_cke,
-  input  wire  [7:0]                pin_ca,
-  input  wire  [hsl_pkg::PIN_W-1:0] pin_dq_i,
-  input  wire                       pin_dq_oe,
-  input  wire                       pin_dqs_i,
-  input  wire                       mr_dbi_en,
-  input  wire                       mr_dbi_ac,
-  input  wire                       mr_repair_en,
-  input  wire  [3:0]                mr_repair_lane,
+  input  wire                          clk,
+  input  wire                          rst_n,
+  input  wire                          pin_ck,
+  input  wire                          pin_cke,
+  input  wire                          mr_dbi_en,
+  input  wire                          mr_dbi_ac,
+  input  wire                          mr_repair_en,
+  input  wire  [3:0]                   mr_repair_lane,
   input  wire  [hsl_pkg::DQ_W*hsl_pkg::RX_DLY_W-1:0] rx_dly,
   input  wire  [hsl_pkg::DQ_W*hsl_pkg::RX_DLY_W-1:0] eye_lo,
   input  wire  [hsl_pkg::DQ_W*hsl_pkg::RX_DLY_W-1:0] eye_hi,
-  output logic [hsl_pkg::PIN_W-1:0] pin_dq_o,
-  output logic                      pin_dqs_o,
 
   input  wire  [hsl_pkg::RCA_W-1:0]    pin_rca,
   input  wire  [hsl_pkg::CCA_W-1:0]    pin_cca,
@@ -60,38 +69,41 @@ module dram_channel_behav (
   output logic                         pin_rx_dv
 );
   import hsl_pkg::*;
+  import dram_pkg::*;
 
-  localparam logic [1:0] PH_IDLE = 2'd0;
-  localparam logic [1:0] PH_CAP  = 2'd1;
-  localparam logic [1:0] PH_DRV  = 2'd2;
+  localparam int RL_RDQS = 3; // RDQS cycles from the RD sample to the first beat
+  localparam int QN      = 8;
+  localparam int NMSG    = 8; // error lines printed per counter
 
-  logic [1:0] phase;
-  logic [2:0] beat;
-  logic [BANK_W-1:0] b_cap;
-  logic [COL_W-1:0]  c_cap;
-  logic [7:0]        cap_b [0:BL-1];
-  logic [DATA_W-1:0] rd_word;
-  logic [BL-1:0]     rd_dbi;
   logic [ROW_W-1:0]  open_row [0:BANK_N-1];
   logic              open_v   [0:BANK_N-1];
   logic [DATA_W-1:0] mem [0:BANK_N-1][0:(1<<ROW_W)-1][0:(1<<COL_W)-1];
 
-  localparam int RL_RDQS = 3; // RDQS cycles from the RD sample to the first beat
-  localparam int QN      = 8;
+  // Earliest legal cycle per bank, in ccyc (controller clocks at the pins).
+  integer ccyc;
+  integer act_at [0:BANK_N-1]; // ACT, REFPB: tRP, tRC, tRFCpb, auto-precharge
+  integer col_at [0:BANK_N-1]; // RD, WR: tRCD
+  integer pre_at [0:BANK_N-1]; // PRE: tRAS, tRTP, write recovery
+  integer any_at;              // any command: tRFC after REF
 
-  // Mission write path: two beats per burst, handed to the negedge clk block.
+  integer mis_err;
+  integer tim_err;
+  integer hz_err;
+  integer wdqs_err;
+  integer n_act, n_pre, n_prea, n_ref, n_refpb, n_rd, n_wr, n_ap;
+
+  // Write path: WRs waiting for their data, two beats per burst.
   logic               wcap_half;
   logic [BEAT_W-1:0]  wcap_lo;
   logic               wdone_tog;
   logic               wdone_seen;
   logic [WORD_PW-1:0] wdone_pins;
   logic [BANK_W-1:0]  wq_bank [0:QN-1];
+  logic [ROW_W-1:0]   wq_row  [0:QN-1];
   logic [COL_W-1:0]   wq_col  [0:QN-1];
   integer             wq_head;
   integer             wq_tail;
-  integer             wdqs_err;
-  integer             mis_err;
-  // Mission read path: words queued on the RD, launched on RDQS.
+  // Read path: words queued on the RD, launched on RDQS.
   logic [DATA_W-1:0]  rq_word [0:QN-1];
   integer             rq_due  [0:QN-1];
   integer             rq_head;
@@ -101,6 +113,18 @@ module dram_channel_behav (
   logic [BEAT_W-1:0]  rx_hi;
   logic               rx_last_dv;
   logic [DQ_W-1:0]    rx_last_byte;
+
+  wire [2:0]         rcmd  = pin_rca[RCA_W-1 -: 3];  // dram_cmd_e codes
+  wire [BANK_W-1:0]  rbank = pin_rca[ROW_W +: BANK_W];
+  wire [ROW_W-1:0]   rrow  = pin_rca[ROW_W-1:0];
+  wire [2:0]         ccmd  = pin_cca[CCA_W-1 -: 3];
+  wire [BANK_W-1:0]  cbank = pin_cca[COL_W+1 +: BANK_W];
+  wire [COL_W-1:0]   ccol  = pin_cca[1 +: COL_W];
+  wire               cap   = pin_cca[0];
+
+  function automatic integer imax(input integer a, input integer b);
+    imax = (a > b) ? a : b;
+  endfunction
 
   // Pins -> logical {DBI, DQ}: lane i is on pin i below the bad pin, on i+1 from it.
   function automatic logic [LANE_N-1:0] from_pins(
@@ -184,14 +208,6 @@ module dram_channel_behav (
     end
   endfunction
 
-  wire [LANE_N-1:0]  lin      = from_pins(pin_dq_i, mr_repair_en, mr_repair_lane);
-  wire [LANE_N-1:0]  lout     = from_pins(pin_dq_o, mr_repair_en, mr_repair_lane);
-  wire [3:0]         opc_pin  = pin_ca[3:0];
-  wire [BANK_W-1:0]  bank_pin = pin_ca[5:4];
-  wire [DQ_W-1:0]    dq_b     = lin[DQ_W-1:0];
-  wire               dbi_b    = lin[DQ_W];
-  wire [DQ_W-1:0]    logical  = dbi_b ? ~dq_b : dq_b;
-
   // {flags, bytes as sent}. last is the DQ byte in the UI before beat 0.
   function automatic logic [DATA_W+BL-1:0] dbi_encode(
     input logic [DATA_W-1:0] word,
@@ -220,138 +236,184 @@ module dram_channel_behav (
     end
   endfunction
 
-  integer bi;
-  always_ff @(negedge clk or negedge rst_n) begin
-    if (!rst_n) begin
-      phase     <= PH_IDLE;
-      beat      <= '0;
-      b_cap     <= '0;
-      c_cap     <= '0;
-      rd_word   <= '0;
-      rd_dbi    <= '0;
-      pin_dq_o  <= '0;
-      pin_dqs_o <= 1'b0;
-      for (bi = 0; bi < BANK_N; bi = bi + 1) begin
-        open_v[bi]   <= 1'b0;
-        open_row[bi] <= '0;
+  task automatic proto(input string what);
+    begin
+      if (mis_err < NMSG) begin
+        $display("[DRAM] cycle %0d: %s", ccyc, what);
       end
-      wdone_seen <= 1'b0;
-      wq_head    <= 0;
-      wq_tail    <= 0;
-      rq_tail    <= 0;
-      mis_err    <= 0;
+      mis_err = mis_err + 1;
+    end
+  endtask
+
+  task automatic timing(input string what, input integer bank, input integer need);
+    begin
+      if (tim_err < NMSG) begin
+        $display("[DRAM] cycle %0d: %s on bank %0d, legal from cycle %0d", ccyc, what, bank, need);
+      end
+      tim_err = tim_err + 1;
+    end
+  endtask
+
+  // ------------------------------------------------------------ commands
+  integer bi;
+  integer qi;
+  integer p_at;
+  always @(negedge clk or negedge rst_n) begin
+    if (!rst_n) begin
+      ccyc       = 0;
+      any_at     = 0;
+      mis_err    = 0;
+      tim_err    = 0;
+      hz_err     = 0;
+      n_act      = 0;
+      n_pre      = 0;
+      n_prea     = 0;
+      n_ref      = 0;
+      n_refpb    = 0;
+      n_rd       = 0;
+      n_wr       = 0;
+      n_ap       = 0;
+      wdone_seen = 1'b0;
+      wq_head    = 0;
+      wq_tail    = 0;
+      rq_tail    = 0;
+      for (bi = 0; bi < BANK_N; bi = bi + 1) begin
+        open_v[bi]   = 1'b0;
+        open_row[bi] = '0;
+        act_at[bi]   = 0;
+        col_at[bi]   = 0;
+        pre_at[bi]   = 0;
+      end
     end else begin
-      pin_dq_o  <= '0;
-      pin_dqs_o <= 1'b0;
-      // ---------------------------------------------------------- mission
+      ccyc = ccyc + 1;
+
       // A burst finished on the write beats: store it at the oldest WR.
       if (wdone_tog != wdone_seen) begin
-        wdone_seen <= wdone_tog;
-        if ((wq_head == wq_tail) || !open_v[wq_bank[wq_head % QN]]) begin
-          mis_err <= mis_err + 1;
+        wdone_seen = wdone_tog;
+        if (wq_head == wq_tail) begin
+          proto("write burst with no WR waiting for it");
         end else begin
-          mem[wq_bank[wq_head % QN]][open_row[wq_bank[wq_head % QN]]][wq_col[wq_head % QN]] <=
+          mem[wq_bank[wq_head % QN]][wq_row[wq_head % QN]][wq_col[wq_head % QN]] =
             burst_in(wdone_pins, mr_repair_en, mr_repair_lane);
-        end
-        if (wq_head != wq_tail) begin
-          wq_head <= wq_head + 1;
+          wq_head = wq_head + 1;
         end
       end
-      if (pin_cke && (pin_rca[RCA_W-1 -: 2] == RCMD_ACT)) begin
-        open_v[pin_rca[ROW_W +: BANK_W]]   <= 1'b1;
-        open_row[pin_rca[ROW_W +: BANK_W]] <= pin_rca[ROW_W-1:0];
-      end else if (pin_cke && (pin_rca[RCA_W-1 -: 2] == RCMD_PRE)) begin
-        open_v[pin_rca[ROW_W +: BANK_W]] <= 1'b0;
-      end
-      if (pin_cke && (pin_cca[CCA_W-1 -: 2] == CCMD_WR)) begin
-        wq_bank[wq_tail % QN] <= pin_cca[COL_W +: BANK_W];
-        wq_col[wq_tail % QN]  <= pin_cca[COL_W-1:0];
-        wq_tail <= wq_tail + 1;
-      end else if (pin_cke && (pin_cca[CCA_W-1 -: 2] == CCMD_RD)) begin
-        if (!open_v[pin_cca[COL_W +: BANK_W]] || (rq_tail - rq_head >= QN)) begin
-          mis_err <= mis_err + 1;
+
+      if (!pin_cke) begin
+        for (bi = 0; bi < BANK_N; bi = bi + 1) begin
+          open_v[bi] = 1'b0;
         end
-        rq_word[rq_tail % QN] <= mem[pin_cca[COL_W +: BANK_W]][open_row[pin_cca[COL_W +: BANK_W]]]
-                                    [pin_cca[COL_W-1:0]];
-        rq_due[rq_tail % QN]  <= rcyc + RL_RDQS;
-        rq_tail <= rq_tail + 1;
-      end
-      // ---------------------------------------------------------- bypass
-      case (phase)
-        PH_IDLE: begin
-          if (pin_cke && pin_dqs_i) begin
-            case (opc_pin)
-              OPC_ACT: begin
-                open_v[bank_pin]   <= 1'b1;
-                open_row[bank_pin] <= dq_b;
-              end
-              OPC_PRE: begin
-                open_v[bank_pin] <= 1'b0;
-              end
-              OPC_WR: begin
-                phase <= PH_CAP;
-                beat  <= '0;
-                b_cap <= bank_pin;
-                c_cap <= lin[COL_W-1:0];
-              end
-              OPC_RD: begin
-                logic [DATA_W+BL-1:0] rd_enc;
-                logic [DATA_W-1:0]    rd_eye;
-                // pin_dq_o still holds the UI before this one (0 when idle).
-                rd_enc    = dbi_encode(mem[bank_pin][open_row[bank_pin]][lin[COL_W-1:0]],
-                                       lout[DQ_W-1:0], mr_dbi_en, mr_dbi_ac);
-                rd_eye    = eye_apply(rd_enc[DATA_W-1:0], rx_dly, eye_lo, eye_hi);
-                phase     <= PH_DRV;
-                beat      <= 3'd1;
-                rd_word   <= rd_eye;
-                rd_dbi    <= rd_enc[DATA_W +: BL];
-                pin_dq_o  <= to_pins({rd_enc[DATA_W], rd_eye[DQ_W-1:0]}, mr_repair_en, mr_repair_lane);
-                pin_dqs_o <= 1'b1;
-              end
-              default: ;
-            endcase
+        wq_head = wq_tail;
+      end else begin
+        // Column bus first: it sees the bank state from before this edge.
+        if ((ccmd == CMD_RD) || (ccmd == CMD_WR)) begin
+          if (!open_v[cbank]) begin
+            proto($sformatf("%s to closed bank %0d", (ccmd == CMD_RD) ? "RD" : "WR", cbank));
           end
-        end
-        PH_CAP: begin
-          if (pin_cke && pin_dqs_i) begin
-            cap_b[beat[1:0]] <= logical;
-            if (beat == BL[2:0]-3'd1) begin
-              phase <= PH_IDLE;
-              if (open_v[b_cap]) begin
-                mem[b_cap][open_row[b_cap]][c_cap] <= {
-                  (beat == 3) ? logical : cap_b[3],
-                  (beat == 2) ? logical : cap_b[2],
-                  (beat == 1) ? logical : cap_b[1],
-                  (beat == 0) ? logical : cap_b[0]
-                };
+          if (ccyc < col_at[cbank]) timing("tRCD", int'(cbank), col_at[cbank]);
+          if (ccyc < any_at)        timing("tRFC", int'(cbank), any_at);
+          if (ccmd == CMD_WR) begin
+            n_wr = n_wr + 1;
+            if (wq_tail - wq_head >= QN) begin
+              proto("write queue overflow");
+            end
+            wq_bank[wq_tail % QN] = cbank;
+            wq_row[wq_tail % QN]  = open_row[cbank];
+            wq_col[wq_tail % QN]  = ccol;
+            wq_tail = wq_tail + 1;
+            p_at = imax(pre_at[cbank], ccyc + WL + 1 + tWR);
+          end else begin
+            n_rd = n_rd + 1;
+            for (qi = wq_head; qi < wq_tail; qi = qi + 1) begin
+              if ((wq_bank[qi % QN] == cbank) && (wq_row[qi % QN] == open_row[cbank]) &&
+                  (wq_col[qi % QN] == ccol)) begin
+                if (hz_err < NMSG) begin
+                  $display("[DRAM] cycle %0d: RD bank %0d col %0d before its write data", ccyc,
+                           cbank, ccol);
+                end
+                hz_err = hz_err + 1;
               end
-            end else begin
-              beat <= beat + 1'b1;
+            end
+            if (rq_tail - rq_head >= QN) begin
+              proto("read queue overflow");
+            end
+            rq_word[rq_tail % QN] = mem[cbank][open_row[cbank]][ccol];
+            rq_due[rq_tail % QN]  = rcyc + RL_RDQS;
+            rq_tail = rq_tail + 1;
+            p_at = imax(pre_at[cbank], ccyc + tRTP);
+          end
+          pre_at[cbank] = p_at;
+          if (cap) begin
+            // Internal precharge on the first edge a PRE would be legal.
+            n_ap = n_ap + 1;
+            open_v[cbank] = 1'b0;
+            act_at[cbank] = imax(act_at[cbank], p_at + tRP);
+          end
+        end else if (ccmd != CMD_NOP) begin
+          proto($sformatf("command %0d on the column bus", ccmd));
+        end
+
+        case (rcmd)
+          CMD_NOP: ;
+          CMD_ACT: begin
+            n_act = n_act + 1;
+            if (open_v[rbank]) proto($sformatf("ACT to open bank %0d", rbank));
+            if (ccyc < act_at[rbank]) timing("ACT (tRP / tRC / tRFCpb)", int'(rbank), act_at[rbank]);
+            if (ccyc < any_at)        timing("tRFC", int'(rbank), any_at);
+            open_v[rbank]   = 1'b1;
+            open_row[rbank] = rrow;
+            col_at[rbank]   = ccyc + tRCD;
+            pre_at[rbank]   = ccyc + tRAS;
+            act_at[rbank]   = ccyc + tRC;
+          end
+          CMD_PRE: begin
+            n_pre = n_pre + 1;
+            if (open_v[rbank]) begin
+              if (ccyc < pre_at[rbank]) timing("PRE (tRAS / tRTP / tWR)", int'(rbank), pre_at[rbank]);
+              open_v[rbank] = 1'b0;
+              act_at[rbank] = imax(act_at[rbank], ccyc + tRP);
             end
           end
-        end
-        PH_DRV: begin
-          if (beat >= BL[2:0]) begin
-            phase <= PH_IDLE;
-          end else begin
-            pin_dq_o  <= to_pins({rd_dbi[beat[1:0]], rd_word[beat*DQ_W +: DQ_W]}, mr_repair_en, mr_repair_lane);
-            pin_dqs_o <= 1'b1;
-            beat      <= beat + 1'b1;
+          CMD_PREA: begin
+            n_prea = n_prea + 1;
+            for (bi = 0; bi < BANK_N; bi = bi + 1) begin
+              if (open_v[bi]) begin
+                if (ccyc < pre_at[bi]) timing("PREA (tRAS / tRTP / tWR)", bi, pre_at[bi]);
+                open_v[bi] = 1'b0;
+                act_at[bi] = imax(act_at[bi], ccyc + tRP);
+              end
+            end
           end
-        end
-        default: phase <= PH_IDLE;
-      endcase
+          CMD_REF: begin
+            n_ref = n_ref + 1;
+            for (bi = 0; bi < BANK_N; bi = bi + 1) begin
+              if (open_v[bi]) proto($sformatf("REF with bank %0d open", bi));
+              if (ccyc < act_at[bi]) timing("REF (tRP)", bi, act_at[bi]);
+            end
+            if (ccyc < any_at) timing("tRFC", 0, any_at);
+            any_at = ccyc + tRFC;
+          end
+          CMD_REFPB: begin
+            n_refpb = n_refpb + 1;
+            if (open_v[rbank]) proto($sformatf("REFPB to open bank %0d", rbank));
+            if (ccyc < act_at[rbank]) timing("REFPB (tRP / tRFCpb)", int'(rbank), act_at[rbank]);
+            if (ccyc < any_at)        timing("tRFC", int'(rbank), any_at);
+            act_at[rbank] = imax(act_at[rbank], ccyc + tRFCpb);
+          end
+          default: proto($sformatf("command %0d on the row bus", rcmd));
+        endcase
+      end
     end
   end
 
-  // ------------------------------------------------------------ mission write
+  // ------------------------------------------------------------ write beats
   always @(negedge pin_ck or negedge rst_n) begin
     if (!rst_n) begin
-      wcap_half <= 1'b0;
-      wcap_lo   <= '0;
-      wdone_tog <= 1'b0;
+      wcap_half  <= 1'b0;
+      wcap_lo    <= '0;
+      wdone_tog  <= 1'b0;
       wdone_pins <= '0;
-      wdqs_err  <= 0;
+      wdqs_err   <= 0;
     end else if (pin_tx_dv) begin
       if (pin_tx_dqs !== {{(DDR_BITS-1){1'b0}}, 1'b1}) begin
         wdqs_err <= wdqs_err + 1;
@@ -367,7 +429,7 @@ module dram_channel_behav (
     end
   end
 
-  // ------------------------------------------------------------ mission read
+  // ------------------------------------------------------------ read beats
   localparam int TDQSCK_PS = 150;
   initial pin_rdqs = 1'b0;
   always begin
@@ -422,7 +484,7 @@ module dram_channel_behav (
     end
   end
 
-  wire unused_pins = ^{pin_dq_oe, TDQSCK_PS};
+  wire unused_pins = ^{TDQSCK_PS};
 endmodule
 
 `default_nettype wire

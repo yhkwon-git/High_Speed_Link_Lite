@@ -6,16 +6,16 @@
 // the delay line and the sampler.
 //
 // Sweep: every lane gets the same code c = 0 .. RX_DLY_MAX in turn. At each
-// code one lane BIST run (16 PRBS7 WR/RD pairs) says which lanes read back
-// clean. Per lane the longest run of clean codes is kept, and the lane is set
+// code one lane BIST run (16 PRBS7 words written, then read back) says which
+// lanes read back clean. Per lane the longest run of clean codes is kept, and the lane is set
 // to the middle of it, lo + (len - 1) / 2. ok means every lane found a run of
 // at least RX_EYE_MIN codes; a lane without one still gets the middle of the
 // best run it saw (or code 0 if it never read clean). Before the first run
 // every lane sits at RX_DLY_DEF.
 //
 // The BIST goes through the controller, so training runs in MISSION with
-// phy_bypass on and the host quiet, after any lane repair. Read direction
-// only; write leveling belongs to the real write path.
+// the PHY on (CTRL.phy_en) and the host quiet, after any lane repair. Read
+// direction only; write leveling is not modeled.
 // -----------------------------------------------------------------------------
 `default_nettype none
 

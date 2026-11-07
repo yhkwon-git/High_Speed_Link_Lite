@@ -8,18 +8,28 @@
 //   CSR resets from rst_sync_n only
 //   every other block resets from rst_sync_n & ~soft_rst
 //
-// Live: CSR, training FSM, reset tree, queue, scheduler, bank FSMs, the
-// phy_bypass framer and the mission datapath (CA pins, TX gear, RDQS capture,
-// Gray FIFO) to the channel model, DBI, lane repair, lane BIST, read
-// leveling, PRBS compare. Tied off in the chip: deskew output (block test).
+// Memory controller: Mini DRAM Controller v4 (mem_ctrl in rtl/mc/, the same
+// files as that repo). The host port takes word-addressed reads and writes and
+// answers each one in request order; writes are answered when accepted
+// (posted). Its DFI-style DRAM side goes straight to the PHY: a row command
+// bus and a column command bus every clock, write data WL clocks after its WR,
+// and read data back on rddata_valid with whatever latency the PHY has.
+//
+// Live: CSR, training FSM, reset tree, controller, PHY (DBI, lane repair, CA
+// pins, TX gear with WDQS, RDQS capture, Gray FIFO), lane BIST, read
+// leveling, PRBS compare. Tied off in the chip: deskew (block test only).
+//
+// The request port is open in mission mode with the PHY on (CTRL.phy_en):
+// only then do commands reach the pins, and a read sent with the PHY off
+// would never be answered. Change phy_en or loopback with the controller idle.
+//
+// Lane BIST: while it runs it owns the request port. req_ready and rsp_valid
+// to the host are held at 0 and the BIST takes every response, so start it
+// with the host quiet and every response taken.
 //
 // Read leveling (hsl_rd_train) sweeps the per-lane delay codes on rx_dly_code,
-// which go to the analog delay lines outside this block, and uses the lane
+// which go to the analog delay lines outside this block, and runs the lane
 // BIST at each code.
-//
-// Lane BIST: while it runs it owns the controller's host port. cmd_ready and
-// rsp_valid to the host are held at 0, so a host beat is neither taken nor
-// answered by the test traffic.
 // -----------------------------------------------------------------------------
 `default_nettype none
 
@@ -32,27 +42,21 @@ module hsl_base_die_lite (
   input  wire  [31:0]                    cfg_wdata,
   output logic [31:0]                    cfg_rdata,
 
-  input  wire                            cmd_valid,
-  output logic                           cmd_ready,
-  input  wire  [3:0]                     cmd_opc,
-  input  wire  [hsl_pkg::BANK_W-1:0]     cmd_bank,
-  input  wire  [hsl_pkg::ROW_W-1:0]      cmd_row,
-  input  wire  [hsl_pkg::COL_W-1:0]      cmd_col,
-  input  wire  [hsl_pkg::DATA_W-1:0]     cmd_wdata,
+  // Host request port (mem_ctrl): word address, posted writes, in-order
+  // responses.
+  input  wire                            req_valid,
+  output logic                           req_ready,
+  input  wire                            req_write,
+  input  wire  [hsl_pkg::ADDR_W-1:0]     req_addr,
+  input  wire  [hsl_pkg::DATA_W-1:0]     req_wdata,
   output logic                           rsp_valid,
+  input  wire                            rsp_ready,
   output logic [hsl_pkg::DATA_W-1:0]     rsp_rdata,
   output logic                           rsp_err,
 
+  // Pins: CK, row / column CA, PHY beats with WDQS, RDQS capture.
   output logic                           pin_ck,
   output logic                           pin_cke,
-  output logic [7:0]                     pin_ca,
-  output logic [hsl_pkg::PIN_W-1:0]      pin_dq_o,
-  output logic                           pin_dq_oe,
-  output logic                           pin_dqs_o,
-  input  wire  [hsl_pkg::PIN_W-1:0]      pin_dq_i,
-  input  wire                            pin_dqs_i,
-
-  // Mission datapath: row / column CA, PHY beats with WDQS, RDQS capture.
   output logic [hsl_pkg::RCA_W-1:0]      pin_rca,
   output logic [hsl_pkg::CCA_W-1:0]      pin_cca,
   output logic [hsl_pkg::BEAT_W-1:0]     pin_tx_beat,
@@ -68,37 +72,46 @@ module hsl_base_die_lite (
   logic rst_sync_n;
   logic rst_logic_n;
 
-  logic soft_rst, train_bypass, loopback, prbs_en, dbi_en, dbi_ac, phy_bypass, phy_en;
+  logic soft_rst, train_bypass, loopback, prbs_en, dbi_en, dbi_ac, phy_en;
   logic train_start, zq_done, wrlvl_done, rdlvl_done, deskew_done;
   logic repair_en, err_clear;
   logic [hsl_pkg::DATA_W-1:0] prbs_data;
   logic [7:0] train_wait;
   logic [3:0] repair_lane;
-  logic [31:0] timing0, timing1;
   logic [3:0] train_state;
   logic train_done, mission_mode, cke;
   logic [15:0] err_cnt;
 
-  logic phy_valid, phy_ready, phy_rsp_valid;
-  logic mc_cmd_ready, mc_rsp_valid;
-  logic lb_start, lb_busy, lb_done, lb_cmd_valid;
+  // Controller request port, after the host / BIST mux.
+  logic                        port_open;
+  logic                        mc_req_valid, mc_req_ready, mc_req_write;
+  logic [hsl_pkg::ADDR_W-1:0]  mc_req_addr;
+  logic [hsl_pkg::DATA_W-1:0]  mc_req_wdata;
+  logic                        mc_rsp_valid, mc_rsp_ready, mc_rsp_err;
+  logic [hsl_pkg::DATA_W-1:0]  mc_rsp_rdata;
+  logic                        mc_q_empty;
+
+  // DFI-style controller <-> PHY.
+  dram_pkg::dram_cmd_e         dfi_rcmd, dfi_ccmd;
+  logic [hsl_pkg::BANK_W-1:0]  dfi_rbank, dfi_cbank;
+  logic [hsl_pkg::ROW_W-1:0]   dfi_row;
+  logic [hsl_pkg::COL_W-1:0]   dfi_col;
+  logic                        dfi_ap;
+  logic                        dfi_wrdata_en, dfi_rddata_valid;
+  logic [hsl_pkg::DATA_W-1:0]  dfi_wrdata, dfi_rddata;
+
+  logic lb_start, lb_busy, lb_done;
   logic [1:0] lb_bank;
   logic [7:0] lb_row;
-  logic [3:0] lb_cmd_opc;
-  logic [hsl_pkg::BANK_W-1:0] lb_cmd_bank;
-  logic [hsl_pkg::ROW_W-1:0] lb_cmd_row;
-  logic [hsl_pkg::COL_W-1:0] lb_cmd_col;
-  logic [hsl_pkg::DATA_W-1:0] lb_cmd_wdata;
+  logic                        lb_req_valid, lb_req_write;
+  logic [hsl_pkg::ADDR_W-1:0]  lb_req_addr;
+  logic [hsl_pkg::DATA_W-1:0]  lb_req_wdata;
   logic [7:0] lb_lane_err;
   logic [4:0] lb_err_bursts;
   logic rt_start, rt_bist_start, rt_busy, rt_done, rt_ok;
   logic [hsl_pkg::DQ_W*hsl_pkg::RX_DLY_W-1:0] rt_lo;
   logic [hsl_pkg::DQ_W*6-1:0] rt_len;
-  logic [3:0] phy_opc;
-  logic [hsl_pkg::BANK_W-1:0] phy_bank;
-  logic [hsl_pkg::ROW_W-1:0] phy_row;
-  logic [hsl_pkg::COL_W-1:0] phy_col;
-  logic [hsl_pkg::DATA_W-1:0] phy_wdata, phy_rsp_rdata;
+  logic obs_tx_valid;
   logic [hsl_pkg::DATA_W-1:0] obs_tx_data, lb_rx_data;
 
   hsl_rst_sync u_rst (
@@ -122,7 +135,6 @@ module hsl_base_die_lite (
     .prbs_en      (prbs_en),
     .dbi_en       (dbi_en),
     .dbi_ac       (dbi_ac),
-    .phy_bypass   (phy_bypass),
     .phy_en       (phy_en),
     .train_start  (train_start),
     .zq_done      (zq_done),
@@ -133,8 +145,6 @@ module hsl_base_die_lite (
     .repair_en    (repair_en),
     .repair_lane  (repair_lane),
     .err_clear    (err_clear),
-    .timing0      (timing0),
-    .timing1      (timing1),
     .lb_start     (lb_start),
     .lb_bank      (lb_bank),
     .lb_row       (lb_row),
@@ -186,106 +196,110 @@ module hsl_base_die_lite (
     .cke          (cke)
   );
 
-  hsl_mc_top u_mc (
-    .clk           (clk),
-    .rst_n         (rst_logic_n),
-    .mission_mode  (mission_mode),
-    .timing0       (timing0),
-    .timing1       (timing1),
-    .cmd_valid     (lb_busy ? lb_cmd_valid : cmd_valid),
-    .cmd_ready     (mc_cmd_ready),
-    .cmd_opc       (lb_busy ? lb_cmd_opc   : cmd_opc),
-    .cmd_bank      (lb_busy ? lb_cmd_bank  : cmd_bank),
-    .cmd_row       (lb_busy ? lb_cmd_row   : cmd_row),
-    .cmd_col       (lb_busy ? lb_cmd_col   : cmd_col),
-    .cmd_wdata     (lb_busy ? lb_cmd_wdata : cmd_wdata),
-    .rsp_valid     (mc_rsp_valid),
-    .rsp_rdata     (rsp_rdata),
-    .rsp_err       (rsp_err),
-    .phy_valid     (phy_valid),
-    .phy_ready     (phy_ready),
-    .phy_opc       (phy_opc),
-    .phy_bank      (phy_bank),
-    .phy_row       (phy_row),
-    .phy_col       (phy_col),
-    .phy_wdata     (phy_wdata),
-    .phy_rsp_valid (phy_rsp_valid),
-    .phy_rsp_rdata (phy_rsp_rdata)
+  // The request port is the lane BIST's while it runs, the host's otherwise.
+  assign port_open    = mission_mode && phy_en;
+  assign mc_req_valid = port_open && (lb_busy ? lb_req_valid : req_valid);
+  assign mc_req_write = lb_busy ? lb_req_write : req_write;
+  assign mc_req_addr  = lb_busy ? lb_req_addr  : req_addr;
+  assign mc_req_wdata = lb_busy ? lb_req_wdata : req_wdata;
+  assign mc_rsp_ready = lb_busy ? 1'b1 : rsp_ready;
+  assign req_ready    = port_open && !lb_busy && mc_req_ready;
+  assign rsp_valid    = mc_rsp_valid && !lb_busy;
+  assign rsp_rdata    = mc_rsp_rdata;
+  assign rsp_err      = mc_rsp_err;
+
+  mem_ctrl #(
+    .ADDR_MAP (hsl_pkg::MC_ADDR_MAP)
+  ) u_mc (
+    .clk             (clk),
+    .rst_n           (rst_logic_n),
+    .req_valid       (mc_req_valid),
+    .req_ready       (mc_req_ready),
+    .req_write       (mc_req_write),
+    .req_addr        (mc_req_addr),
+    .req_wdata       (mc_req_wdata),
+    .rsp_valid       (mc_rsp_valid),
+    .rsp_ready       (mc_rsp_ready),
+    .rsp_rdata       (mc_rsp_rdata),
+    .rsp_err         (mc_rsp_err),
+    .dram_rcmd       (dfi_rcmd),
+    .dram_rbank      (dfi_rbank),
+    .dram_row        (dfi_row),
+    .dram_ccmd       (dfi_ccmd),
+    .dram_cbank      (dfi_cbank),
+    .dram_col        (dfi_col),
+    .dram_ap         (dfi_ap),
+    .dram_wdata_en   (dfi_wrdata_en),
+    .dram_wdata      (dfi_wrdata),
+    .dram_data_valid (dfi_rddata_valid),
+    .dram_rdata      (dfi_rddata),
+    .q_empty         (mc_q_empty)
   );
 
   hsl_dft_top u_dft (
-    .clk       (clk),
-    .rst_n     (rst_logic_n),
-    .loopback  (loopback),
-    .prbs_en   (prbs_en),
-    .err_clear (err_clear),
-    .tx_valid  (phy_valid),
-    .tx_data   (obs_tx_data),
-    .rx_data   (lb_rx_data),
-    .prbs_data (prbs_data),
-    .err_cnt   (err_cnt),
+    .clk           (clk),
+    .rst_n         (rst_logic_n),
+    .loopback      (loopback),
+    .prbs_en       (prbs_en),
+    .err_clear     (err_clear),
+    .tx_valid      (obs_tx_valid),
+    .tx_data       (obs_tx_data),
+    .rx_data       (lb_rx_data),
+    .prbs_data     (prbs_data),
+    .err_cnt       (err_cnt),
     .lb_start      (lb_start | rt_bist_start),
     .lb_bank       (lb_bank),
     .lb_row        (lb_row),
+    .lb_q_empty    (mc_q_empty),
     .lb_busy       (lb_busy),
-    .lb_cmd_valid  (lb_cmd_valid),
-    .lb_cmd_ready  (mc_cmd_ready),
-    .lb_cmd_opc    (lb_cmd_opc),
-    .lb_cmd_bank   (lb_cmd_bank),
-    .lb_cmd_row    (lb_cmd_row),
-    .lb_cmd_col    (lb_cmd_col),
-    .lb_cmd_wdata  (lb_cmd_wdata),
+    .lb_req_valid  (lb_req_valid),
+    .lb_req_ready  (port_open && mc_req_ready),
+    .lb_req_write  (lb_req_write),
+    .lb_req_addr   (lb_req_addr),
+    .lb_req_wdata  (lb_req_wdata),
     .lb_rsp_valid  (mc_rsp_valid),
-    .lb_rsp_rdata  (rsp_rdata),
+    .lb_rsp_rdata  (mc_rsp_rdata),
     .lb_done       (lb_done),
     .lb_lane_err   (lb_lane_err),
     .lb_err_bursts (lb_err_bursts)
   );
 
-  // The host port is the lane BIST's while it runs.
-  assign cmd_ready = mc_cmd_ready & ~lb_busy;
-  assign rsp_valid = mc_rsp_valid & ~lb_busy;
-
   hsl_phy_top u_phy (
-    .clk         (clk),
-    .rst_n       (rst_logic_n),
-    .cke         (cke),
-    .dbi_en      (dbi_en),
-    .dbi_ac      (dbi_ac),
-    .phy_bypass  (phy_bypass),
-    .phy_en      (phy_en),
-    .repair_en   (repair_en),
-    .repair_lane (repair_lane),
-    .loopback    (loopback),
-    .prbs_en     (prbs_en),
-    .prbs_data   (prbs_data),
-    .valid       (phy_valid),
-    .ready       (phy_ready),
-    .opc         (phy_opc),
-    .bank        (phy_bank),
-    .row         (phy_row),
-    .col         (phy_col),
-    .wdata       (phy_wdata),
-    .rsp_valid   (phy_rsp_valid),
-    .rsp_rdata   (phy_rsp_rdata),
-    .obs_tx_data (obs_tx_data),
-    .lb_rx_data  (lb_rx_data),
-    .pin_ck      (pin_ck),
-    .pin_cke     (pin_cke),
-    .pin_ca      (pin_ca),
-    .pin_dq_o    (pin_dq_o),
-    .pin_dq_oe   (pin_dq_oe),
-    .pin_dqs_o   (pin_dqs_o),
-    .pin_dq_i    (pin_dq_i),
-    .pin_dqs_i   (pin_dqs_i),
-    .pin_rca     (pin_rca),
-    .pin_cca     (pin_cca),
-    .pin_tx_beat (pin_tx_beat),
-    .pin_tx_dqs  (pin_tx_dqs),
-    .pin_tx_dv   (pin_tx_dv),
-    .pin_rdqs    (pin_rdqs),
-    .pin_rx_beat (pin_rx_beat),
-    .pin_rx_dv   (pin_rx_dv)
+    .clk          (clk),
+    .rst_n        (rst_logic_n),
+    .cke          (cke),
+    .dbi_en       (dbi_en),
+    .dbi_ac       (dbi_ac),
+    .phy_en       (phy_en),
+    .repair_en    (repair_en),
+    .repair_lane  (repair_lane),
+    .loopback     (loopback),
+    .prbs_en      (prbs_en),
+    .prbs_data    (prbs_data),
+    .rcmd         (dfi_rcmd),
+    .rbank        (dfi_rbank),
+    .row          (dfi_row),
+    .ccmd         (dfi_ccmd),
+    .cbank        (dfi_cbank),
+    .col          (dfi_col),
+    .ap           (dfi_ap),
+    .wrdata_en    (dfi_wrdata_en),
+    .wrdata       (dfi_wrdata),
+    .rddata_valid (dfi_rddata_valid),
+    .rddata       (dfi_rddata),
+    .obs_tx_valid (obs_tx_valid),
+    .obs_tx_data  (obs_tx_data),
+    .lb_rx_data   (lb_rx_data),
+    .pin_ck       (pin_ck),
+    .pin_cke      (pin_cke),
+    .pin_rca      (pin_rca),
+    .pin_cca      (pin_cca),
+    .pin_tx_beat  (pin_tx_beat),
+    .pin_tx_dqs   (pin_tx_dqs),
+    .pin_tx_dv    (pin_tx_dv),
+    .pin_rdqs     (pin_rdqs),
+    .pin_rx_beat  (pin_rx_beat),
+    .pin_rx_dv    (pin_rx_dv)
   );
 endmodule
 

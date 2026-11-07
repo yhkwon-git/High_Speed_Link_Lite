@@ -13,9 +13,8 @@
 // never travels further than the next pin, and the spare sits at the end of
 // the byte instead of being routed from every lane.
 // en == 0 or lane >= 9: P = {0, L}.
-// NSYM symbols (UIs) side by side share the setting: 1 for the bypass
-// framer, BL for a whole burst on the mission path. The far end must use the
-// same setting.
+// NSYM symbols (UIs) side by side share the setting: BL for a whole burst
+// in the PHY, 1 in the block test. The far end must use the same setting.
 // -----------------------------------------------------------------------------
 `default_nettype none
 
