@@ -69,6 +69,7 @@ package hsl_pkg;
   localparam logic [7:0] CSR_TIMING0 = 8'h1C;
   localparam logic [7:0] CSR_TIMING1 = 8'h20;
   localparam logic [7:0] CSR_LANE_BIST = 8'h24;
+  localparam logic [7:0] CSR_RDTRAIN   = 8'h28;
 
   localparam int CTRL_SOFT_RST     = 0;
   localparam int CTRL_TRAIN_BYPASS = 1;
@@ -95,6 +96,16 @@ package hsl_pkg;
   //                  [7:4] lowest failing DQ lane, [15:8] DQ lane errors,
   //                  [20:16] bursts with a mismatch.
   localparam int LB_BURSTS = 16; // WR/RD pairs per lane BIST run
+
+  // Read leveling: one delay-line code per DQ lane toward the analog PHY.
+  // RDTRAIN write: [0] start, [6:4] lane to read back.
+  // RDTRAIN read:  [0] busy, [1] done, [2] every lane found an eye,
+  //                [6:4] lane, [12:8] its code, [20:16] eye start,
+  //                [29:24] eye width in codes.
+  localparam int                  RX_DLY_W   = 5;
+  localparam logic [RX_DLY_W-1:0] RX_DLY_DEF = 5'd16; // before training
+  localparam logic [RX_DLY_W-1:0] RX_DLY_MAX = 5'd31;
+  localparam logic [5:0]          RX_EYE_MIN = 6'd2;  // narrowest run that counts
 
   // Study timings in controller clocks. Not a JEDEC AC table.
   localparam logic [7:0] T_RCD = 8'd4;

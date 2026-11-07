@@ -7,7 +7,8 @@
 // clears itself and the datapath cannot be held in reset.
 // A write to ERRCNT is a clear pulse. ID, VERSION, and STATUS ignore writes.
 // A write to LANE_BIST with bit 0 set starts a lane test; reads return its
-// status (layout in hsl_pkg).
+// status. RDTRAIN works the same way for read leveling and reads back one
+// lane's result, chosen by [6:4] of the last write (layouts in hsl_pkg).
 // Map: docs/03_microarchitecture.md
 // -----------------------------------------------------------------------------
 `default_nettype none
@@ -41,6 +42,7 @@ module hsl_csr (
   output logic        lb_start,
   output logic [1:0]  lb_bank,
   output logic [7:0]  lb_row,
+  output logic        rt_start,
 
   input  wire  [3:0]  train_state,
   input  wire         train_done,
@@ -49,13 +51,21 @@ module hsl_csr (
   input  wire         lb_busy,
   input  wire         lb_done,
   input  wire  [7:0]  lb_lane_err,
-  input  wire  [4:0]  lb_err_bursts
+  input  wire  [4:0]  lb_err_bursts,
+  input  wire         rt_busy,
+  input  wire         rt_done,
+  input  wire         rt_ok,
+  input  wire  [hsl_pkg::DQ_W*hsl_pkg::RX_DLY_W-1:0] rt_code,
+  input  wire  [hsl_pkg::DQ_W*hsl_pkg::RX_DLY_W-1:0] rt_lo,
+  input  wire  [hsl_pkg::DQ_W*6-1:0]                 rt_len
 );
   import hsl_pkg::*;
 
   logic [6:0] ctrl;
   logic [31:0] status;
   logic [31:0] lb_status;
+  logic [31:0] rt_status;
+  logic [2:0]  rt_sel;
   logic        lb_single;
   logic [3:0]  lb_fail_lane;
   integer      li;
@@ -77,6 +87,8 @@ module hsl_csr (
       lb_start    <= 1'b0;
       lb_bank     <= '0;
       lb_row      <= '0;
+      rt_start    <= 1'b0;
+      rt_sel      <= '0;
     end else begin
       train_start <= 1'b0;
       zq_done     <= 1'b0;
@@ -85,6 +97,7 @@ module hsl_csr (
       deskew_done <= 1'b0;
       err_clear   <= 1'b0;
       lb_start    <= 1'b0;
+      rt_start    <= 1'b0;
       if (cfg_we) begin
         case (cfg_addr)
           CSR_CTRL: ctrl <= cfg_wdata[6:0];
@@ -107,6 +120,10 @@ module hsl_csr (
             lb_start <= cfg_wdata[0];
             lb_bank  <= cfg_wdata[5:4];
             lb_row   <= cfg_wdata[15:8];
+          end
+          CSR_RDTRAIN: begin
+            rt_start <= cfg_wdata[0];
+            rt_sel   <= cfg_wdata[6:4];
           end
           default: ;
         endcase
@@ -150,6 +167,17 @@ module hsl_csr (
   end
 
   always_comb begin
+    rt_status        = '0;
+    rt_status[0]     = rt_busy;
+    rt_status[1]     = rt_done;
+    rt_status[2]     = rt_ok;
+    rt_status[6:4]   = rt_sel;
+    rt_status[12:8]  = rt_code[rt_sel*RX_DLY_W +: RX_DLY_W];
+    rt_status[20:16] = rt_lo[rt_sel*RX_DLY_W +: RX_DLY_W];
+    rt_status[29:24] = rt_len[rt_sel*6 +: 6];
+  end
+
+  always_comb begin
     case (cfg_addr)
       CSR_ID:      cfg_rdata = HSL_ID;
       CSR_VERSION: cfg_rdata = HSL_VERSION;
@@ -161,6 +189,7 @@ module hsl_csr (
       CSR_TIMING0: cfg_rdata = timing0;
       CSR_TIMING1: cfg_rdata = timing1;
       CSR_LANE_BIST: cfg_rdata = lb_status;
+      CSR_RDTRAIN:   cfg_rdata = rt_status;
       default:     cfg_rdata = 32'h0;
     endcase
   end

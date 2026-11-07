@@ -13,6 +13,10 @@
 // Tied off in the chip: gearbox din_valid, FIFO wr_en/rd_en, deskew output.
 // Those blocks are exercised by their own instances in tb_hsl_blocks.
 //
+// Read leveling (hsl_rd_train) sweeps the per-lane delay codes on rx_dly_code,
+// which go to the analog delay lines outside this block, and uses the lane
+// BIST at each code.
+//
 // Lane BIST: while it runs it owns the controller's host port. cmd_ready and
 // rsp_valid to the host are held at 0, so a host beat is neither taken nor
 // answered by the test traffic.
@@ -46,7 +50,10 @@ module hsl_base_die_lite (
   output logic                           pin_dq_oe,
   output logic                           pin_dqs_o,
   input  wire  [hsl_pkg::PIN_W-1:0]      pin_dq_i,
-  input  wire                            pin_dqs_i
+  input  wire                            pin_dqs_i,
+
+  // One read delay-line code per DQ lane, to the analog PHY.
+  output logic [hsl_pkg::DQ_W*hsl_pkg::RX_DLY_W-1:0] rx_dly_code
 );
   logic rst_sync_n;
   logic rst_logic_n;
@@ -74,6 +81,9 @@ module hsl_base_die_lite (
   logic [hsl_pkg::DATA_W-1:0] lb_cmd_wdata;
   logic [7:0] lb_lane_err;
   logic [4:0] lb_err_bursts;
+  logic rt_start, rt_bist_start, rt_busy, rt_done, rt_ok;
+  logic [hsl_pkg::DQ_W*hsl_pkg::RX_DLY_W-1:0] rt_lo;
+  logic [hsl_pkg::DQ_W*6-1:0] rt_len;
   logic [3:0] phy_opc;
   logic [hsl_pkg::BANK_W-1:0] phy_bank;
   logic [hsl_pkg::ROW_W-1:0] phy_row;
@@ -117,6 +127,7 @@ module hsl_base_die_lite (
     .lb_start     (lb_start),
     .lb_bank      (lb_bank),
     .lb_row       (lb_row),
+    .rt_start     (rt_start),
     .train_state  (train_state),
     .train_done   (train_done),
     .mission_mode (mission_mode),
@@ -124,7 +135,28 @@ module hsl_base_die_lite (
     .lb_busy      (lb_busy),
     .lb_done      (lb_done),
     .lb_lane_err  (lb_lane_err),
-    .lb_err_bursts(lb_err_bursts)
+    .lb_err_bursts(lb_err_bursts),
+    .rt_busy      (rt_busy),
+    .rt_done      (rt_done),
+    .rt_ok        (rt_ok),
+    .rt_code      (rx_dly_code),
+    .rt_lo        (rt_lo),
+    .rt_len       (rt_len)
+  );
+
+  hsl_rd_train u_rd_train (
+    .clk           (clk),
+    .rst_n         (rst_logic_n),
+    .start         (rt_start),
+    .bist_start    (rt_bist_start),
+    .bist_busy     (lb_busy),
+    .bist_lane_err (lb_lane_err),
+    .rx_dly        (rx_dly_code),
+    .busy          (rt_busy),
+    .done          (rt_done),
+    .ok            (rt_ok),
+    .win_lo        (rt_lo),
+    .win_len       (rt_len)
   );
 
   hsl_training_fsm u_fsm (
@@ -181,7 +213,7 @@ module hsl_base_die_lite (
     .rx_data   (lb_rx_data),
     .prbs_data (prbs_data),
     .err_cnt   (err_cnt),
-    .lb_start      (lb_start),
+    .lb_start      (lb_start | rt_bist_start),
     .lb_bank       (lb_bank),
     .lb_row        (lb_row),
     .lb_busy       (lb_busy),

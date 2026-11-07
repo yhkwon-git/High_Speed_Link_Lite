@@ -14,6 +14,12 @@
 // shift as rtl/phy/hsl_lane_shift.sv (pin k idles, lanes from k up use the
 // next pin, RED carries the last one). It is written again as loops here and
 // applies to every symbol, headers included, in both directions.
+//
+// Read eye: rx_dly is the chip's delay-line code per DQ lane. Inside
+// [eye_lo, eye_hi] a lane samples its own UI; before the window it samples
+// the UI before, after the window the UI after (0 outside the burst, where the
+// bus idles). This stands in for the analog delay line and sampler, in the
+// logical lane domain (before the repair shift).
 // -----------------------------------------------------------------------------
 `default_nettype none
 
@@ -30,6 +36,9 @@ module dram_channel_behav (
   input  wire                       mr_dbi_ac,
   input  wire                       mr_repair_en,
   input  wire  [3:0]                mr_repair_lane,
+  input  wire  [hsl_pkg::DQ_W*hsl_pkg::RX_DLY_W-1:0] rx_dly,
+  input  wire  [hsl_pkg::DQ_W*hsl_pkg::RX_DLY_W-1:0] eye_lo,
+  input  wire  [hsl_pkg::DQ_W*hsl_pkg::RX_DLY_W-1:0] eye_hi,
   output logic [hsl_pkg::PIN_W-1:0] pin_dq_o,
   output logic                      pin_dqs_o
 );
@@ -82,6 +91,35 @@ module dram_channel_behav (
           to_pins[i] = l[i];
         end else if (i > k) begin
           to_pins[i] = l[i-1];
+        end
+      end
+    end
+  endfunction
+
+  // What the chip's sampler reads on each lane for a burst, given its codes.
+  function automatic logic [DATA_W-1:0] eye_apply(
+    input logic [DATA_W-1:0]           w,
+    input logic [DQ_W*RX_DLY_W-1:0]    code,
+    input logic [DQ_W*RX_DLY_W-1:0]    lo,
+    input logic [DQ_W*RX_DLY_W-1:0]    hi
+  );
+    integer b;
+    integer p;
+    integer src;
+    begin
+      eye_apply = '0;
+      for (b = 0; b < BL; b = b + 1) begin
+        for (p = 0; p < DQ_W; p = p + 1) begin
+          if (code[p*RX_DLY_W +: RX_DLY_W] < lo[p*RX_DLY_W +: RX_DLY_W]) begin
+            src = b - 1;
+          end else if (code[p*RX_DLY_W +: RX_DLY_W] > hi[p*RX_DLY_W +: RX_DLY_W]) begin
+            src = b + 1;
+          end else begin
+            src = b;
+          end
+          if ((src >= 0) && (src < BL)) begin
+            eye_apply[b*DQ_W + p] = w[src*DQ_W + p];
+          end
         end
       end
     end
@@ -160,14 +198,16 @@ module dram_channel_behav (
               end
               OPC_RD: begin
                 logic [DATA_W+BL-1:0] rd_enc;
+                logic [DATA_W-1:0]    rd_eye;
                 // pin_dq_o still holds the UI before this one (0 when idle).
                 rd_enc    = dbi_encode(mem[bank_pin][open_row[bank_pin]][lin[COL_W-1:0]],
                                        lout[DQ_W-1:0], mr_dbi_en, mr_dbi_ac);
+                rd_eye    = eye_apply(rd_enc[DATA_W-1:0], rx_dly, eye_lo, eye_hi);
                 phase     <= PH_DRV;
                 beat      <= 3'd1;
-                rd_word   <= rd_enc[DATA_W-1:0];
+                rd_word   <= rd_eye;
                 rd_dbi    <= rd_enc[DATA_W +: BL];
-                pin_dq_o  <= to_pins({rd_enc[DATA_W], rd_enc[DQ_W-1:0]}, mr_repair_en, mr_repair_lane);
+                pin_dq_o  <= to_pins({rd_enc[DATA_W], rd_eye[DQ_W-1:0]}, mr_repair_en, mr_repair_lane);
                 pin_dqs_o <= 1'b1;
               end
               default: ;

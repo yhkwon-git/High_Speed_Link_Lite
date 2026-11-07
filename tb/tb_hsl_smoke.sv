@@ -1,5 +1,6 @@
 // Chip-level smoke plus T1, T4, T5, T7, T8 (PRBS compare, loopback WR->RD),
-// T9 (DBI-AC at the pins, DBI on RD data), and T10 (lane BIST, repair, retest).
+// T9 (DBI-AC at the pins, DBI on RD data), T10 (lane BIST, repair, retest),
+// and T11 (read leveling against per-lane eyes).
 // Controller half-period is CTRL_PERIOD_PS/2 = 625 ps (800 MHz).
 `timescale 1ns/100fs
 `default_nettype none
@@ -54,6 +55,9 @@ module tb_hsl_smoke;
   logic [PIN_W-1:0] fault_val;
   wire  [PIN_W-1:0] link_to_dram;
   wire  [PIN_W-1:0] link_to_phy;
+  wire  [DQ_W*RX_DLY_W-1:0] rx_dly_code; // chip -> analog delay lines (model)
+  logic [DQ_W*RX_DLY_W-1:0] eye_lo;      // per-lane eye in delay codes
+  logic [DQ_W*RX_DLY_W-1:0] eye_hi;
 
   hsl_base_die_lite dut (
     .clk(clk), .rst_n(rst_n),
@@ -64,7 +68,8 @@ module tb_hsl_smoke;
     .rsp_valid(rsp_valid), .rsp_rdata(rsp_rdata), .rsp_err(rsp_err),
     .pin_ck(pin_ck), .pin_cke(pin_cke), .pin_ca(pin_ca),
     .pin_dq_o(pin_dq_o), .pin_dq_oe(pin_dq_oe), .pin_dqs_o(pin_dqs_o),
-    .pin_dq_i(pin_dq_i), .pin_dqs_i(pin_dqs_i)
+    .pin_dq_i(pin_dq_i), .pin_dqs_i(pin_dqs_i),
+    .rx_dly_code(rx_dly_code)
   );
 
   dram_channel_behav u_dram (
@@ -73,6 +78,7 @@ module tb_hsl_smoke;
     .pin_dq_i(link_to_dram), .pin_dq_oe(pin_dq_oe), .pin_dqs_i(pin_dqs_o),
     .mr_dbi_en(mr_dbi_en), .mr_dbi_ac(mr_dbi_ac),
     .mr_repair_en(mr_repair_en), .mr_repair_lane(mr_repair_lane),
+    .rx_dly(rx_dly_code), .eye_lo(eye_lo), .eye_hi(eye_hi),
     .pin_dq_o(dram_dq), .pin_dqs_o(dram_dqs)
   );
 
@@ -917,6 +923,167 @@ module tb_hsl_smoke;
     end
   endtask
 
+  // ---------------------------------------------------------------------------
+  // T11: read leveling. Each DQ lane gets its own eye (a window of delay-line
+  // codes where the sampler reads its own UI). The trainer sweeps the codes
+  // with the lane BIST and must land every lane on the middle of its eye.
+  // ---------------------------------------------------------------------------
+  task automatic set_eye(input integer p, input integer lo, input integer w);
+    begin
+      eye_lo[p*RX_DLY_W +: RX_DLY_W] = 5'(lo);
+      eye_hi[p*RX_DLY_W +: RX_DLY_W] = 5'(lo + w - 1);
+    end
+  endtask
+
+  task automatic rd_train(output logic [31:0] st);
+    integer guard;
+    begin
+      csr_write(CSR_RDTRAIN, 32'h1);
+      guard = 0;
+      st = '0;
+      while (((st[0] === 1'b1) || (st[1] !== 1'b1)) && (guard < 40000)) begin
+        csr_read(CSR_RDTRAIN, st);
+        guard = guard + 1;
+      end
+    end
+  endtask
+
+  integer t11_lo [0:DQ_W-1];
+  integer t11_w  [0:DQ_W-1];
+
+  task automatic t11_reset();
+    begin
+      csr_write(CSR_CTRL, (32'h1 << CTRL_TRAIN_BYPASS) | (32'h1 << CTRL_SOFT_RST));
+      wait_cycles(3);
+      csr_write(CSR_CTRL, 32'h1 << CTRL_TRAIN_BYPASS);
+      wait_cycles(4);
+    end
+  endtask
+
+  // Train against the eyes in t11_lo / t11_w and check code, start and width.
+  // A soft reset first puts every lane back at code 16.
+  task automatic t11_round(output integer bad);
+    integer      p;
+    string       line;
+    logic [7:0]  pre_bad;
+    logic [31:0] st;
+    begin
+      bad = 0;
+      pre_bad = '0;
+      t11_reset();
+      arm_bypass(32'h0);
+      for (p = 0; p < DQ_W; p = p + 1) begin
+        set_eye(p, t11_lo[p], t11_w[p]);
+        if ((16 < t11_lo[p]) || (16 > t11_lo[p] + t11_w[p] - 1)) begin
+          pre_bad[p] = 1'b1;
+        end
+      end
+      // Before training every lane sits at code 16: the BIST must fail on
+      // exactly the lanes whose eye leaves 16 out.
+      lane_bist(st);
+      if (st[15:8] !== pre_bad) begin
+        $display("[T11] before training: lane errors %h, expected %h", st[15:8], pre_bad);
+        bad = bad + 1;
+      end
+      rd_train(st);
+      if ((st[1] !== 1'b1) || (st[2] !== 1'b1)) begin
+        $display("[T11] training status %h", st);
+        bad = bad + 1;
+      end
+      line = "";
+      for (p = 0; p < DQ_W; p = p + 1) begin
+        csr_write(CSR_RDTRAIN, {25'h0, 3'(p), 4'h0});
+        csr_read(CSR_RDTRAIN, st);
+        line = {line, $sformatf(" %0d:[%0d,%0d]->%0d", p, st[20:16], st[20:16] + st[29:24] - 1, st[12:8])};
+        if ((st[12:8] !== 5'(t11_lo[p] + (t11_w[p] - 1) / 2)) || (st[20:16] !== 5'(t11_lo[p])) ||
+            (st[29:24] !== 6'(t11_w[p]))) begin
+          $display("[T11] lane %0d: code %0d eye %0d+%0d, expected code %0d eye %0d+%0d",
+                   p, st[12:8], st[20:16], st[29:24], t11_lo[p] + (t11_w[p] - 1) / 2,
+                   t11_lo[p], t11_w[p]);
+          bad = bad + 1;
+        end
+      end
+      $display("[T11] lane:[eye]->code%s", line);
+      lane_bist(st);
+      if ((st[2:0] !== 3'b110) || (st[15:8] !== 8'h00)) begin
+        $display("[T11] after training: status %h", st);
+        bad = bad + 1;
+      end
+    end
+  endtask
+
+  task automatic run_t11();
+    integer      t11bad;
+    integer      bad;
+    integer      p;
+    integer      k;
+    integer      guard;
+    logic [31:0] st;
+    logic [31:0] d;
+    begin
+      t11bad = 0;
+
+      // Fixed eyes: lanes 0, 2, 4, 5 leave the default code 16 out.
+      t11_lo[0] = 3;  t11_w[0] = 7;   t11_lo[1] = 9;  t11_w[1] = 9;
+      t11_lo[2] = 18; t11_w[2] = 8;   t11_lo[3] = 6;  t11_w[3] = 12;
+      t11_lo[4] = 20; t11_w[4] = 6;   t11_lo[5] = 1;  t11_w[5] = 10;
+      t11_lo[6] = 12; t11_w[6] = 5;   t11_lo[7] = 15; t11_w[7] = 11;
+      t11_round(bad);
+      t11bad = t11bad + bad;
+
+      // Host traffic at the trained codes.
+      push_wait(OPC_ACT, 2'd2, 8'h21, 4'h0, 32'h0);
+      for (k = 0; k < 16; k = k + 1) begin
+        push_wait(OPC_WR, 2'd2, 8'h21, 4'(k), {16'h5A00 | 16'(k), 16'h3C3C} ^ (32'h80000001 << k));
+      end
+      for (k = 0; k < 16; k = k + 1) begin
+        got_rsp = 1'b0;
+        push_wait(OPC_RD, 2'd2, 8'h21, 4'(k), 32'h0);
+        guard = 0;
+        while (!got_rsp && (guard < 200)) begin
+          @(posedge clk);
+          guard = guard + 1;
+        end
+        #1ps;
+        d = {16'h5A00 | 16'(k), 16'h3C3C} ^ (32'h80000001 << k);
+        if (!got_rsp || (got_data !== d)) begin
+          $display("[T11] trained RD col %0d rsp %b data %h exp %h", k, got_rsp, got_data, d);
+          t11bad = t11bad + 1;
+        end
+      end
+      push_wait(OPC_PRE, 2'd2, 8'h21, 4'h0, 32'h0);
+
+      // Random eyes, width 3-12.
+      for (p = 0; p < DQ_W; p = p + 1) begin
+        t11_w[p]  = 3 + ($urandom % 10);
+        t11_lo[p] = $urandom % (33 - t11_w[p]);
+      end
+      t11_round(bad);
+      t11bad = t11bad + bad;
+
+      // A closed eye on lane 3: training must say so.
+      set_eye(3, 20, 0);
+      rd_train(st);
+      csr_write(CSR_RDTRAIN, {25'h0, 3'd3, 4'h0});
+      csr_read(CSR_RDTRAIN, st);
+      if ((st[1] !== 1'b1) || (st[2] !== 1'b0) || (st[29:24] !== 6'd0)) begin
+        $display("[T11] closed eye: status %h", st);
+        t11bad = t11bad + 1;
+      end
+
+      // Open every eye again and put the codes back to their reset value.
+      eye_lo = '0;
+      eye_hi = '1;
+      t11_reset();
+
+      if (t11bad == 0) begin
+        $display("[T11] PASS");
+      end else begin
+        errors = errors + t11bad;
+      end
+    end
+  endtask
+
   initial begin
     errors = 0;
     // block_errors is driven by the u_blocks output port only.
@@ -940,6 +1107,8 @@ module tb_hsl_smoke;
     mr_repair_lane = '0;
     fault_mask = '0;
     fault_val = '0;
+    eye_lo = '0;
+    eye_hi = '1;
     mon_on = 1'b0;
     mon_dc = 1'b0;
     mon_ac = 1'b0;
@@ -963,6 +1132,7 @@ module tb_hsl_smoke;
     run_t8();
     run_t9();
     run_t10();
+    run_t11();
 
     wait (block_done);
     if (block_errors != 0) errors = errors + block_errors;

@@ -15,6 +15,7 @@ rtl/phy/hsl_phy_clk.sv
 rtl/phy/hsl_phy_tx.sv
 rtl/phy/hsl_phy_rx.sv
 rtl/phy/hsl_phy_top.sv
+rtl/phy/hsl_rd_train.sv
 rtl/dft/hsl_prbs.sv
 rtl/dft/hsl_loopback.sv
 rtl/dft/hsl_err_cnt.sv
