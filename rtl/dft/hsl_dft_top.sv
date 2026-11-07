@@ -43,7 +43,9 @@ module hsl_dft_top (
   logic prbs_bit;
   logic [DATA_W-1:0] got;
 
-  hsl_prbs u_prbs (
+  // REG_OUT: the word leaves a register; it feeds the DBI-AC encoder in the
+  // PHY, and the unrolled XOR network in front of it missed 800 MHz in STA.
+  hsl_prbs #(.REG_OUT(1'b1)) u_prbs (
     .clk        (clk),
     .rst_n      (rst_n),
     .en         (prbs_en),

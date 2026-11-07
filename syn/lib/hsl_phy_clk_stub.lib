@@ -1,0 +1,59 @@
+/*
+ * Timing stand-in for the PLL that drives clk_phy (hsl_phy_clk).
+ *
+ * In silicon hsl_phy_clk is an analog PLL macro; in this repo it is a
+ * behavioral 2x clock for simulation and an empty shell for synthesis. With
+ * no cell behind it, STA cannot trace the generated clock clk_phy back to its
+ * master clock, so every flop on clk_phy comes out unclocked. This cell gives
+ * the macro a pin-to-pin arc (clk_ctrl -> clk_phy, zero delay) so that
+ * create_generated_clock -source clk -multiply_by 2 on its output works, as a
+ * PLL's .lib would. It models no jitter, duty-cycle error or insertion delay.
+ * Units match the Nangate45 library it is read with.
+ */
+library (hsl_phy_clk_stub) {
+  delay_model : table_lookup;
+  time_unit : "1ns";
+  leakage_power_unit : "1nW";
+  voltage_unit : "1V";
+  current_unit : "1mA";
+  pulling_resistance_unit : "1kohm";
+  capacitive_load_unit (1, ff);
+  nom_process : 1.00;
+  nom_temperature : 25.00;
+  nom_voltage : 1.10;
+  default_input_pin_cap : 1.0;
+  default_output_pin_cap : 0.0;
+  default_inout_pin_cap : 1.0;
+  default_max_transition : 0.2;
+  input_threshold_pct_rise : 50;
+  input_threshold_pct_fall : 50;
+  output_threshold_pct_rise : 50;
+  output_threshold_pct_fall : 50;
+  slew_lower_threshold_pct_rise : 30;
+  slew_lower_threshold_pct_fall : 30;
+  slew_upper_threshold_pct_rise : 70;
+  slew_upper_threshold_pct_fall : 70;
+  slew_derate_from_library : 1.0;
+
+  cell (hsl_phy_clk) {
+    area : 0;
+    dont_use : true;
+    dont_touch : true;
+    pin (clk_ctrl) {
+      direction : input;
+      capacitance : 1.0;
+      clock : true;
+    }
+    pin (clk_phy) {
+      direction : output;
+      timing () {
+        related_pin : "clk_ctrl";
+        timing_sense : positive_unate;
+        cell_rise (scalar) { values ("0.0"); }
+        cell_fall (scalar) { values ("0.0"); }
+        rise_transition (scalar) { values ("0.02"); }
+        fall_transition (scalar) { values ("0.02"); }
+      }
+    }
+  }
+}

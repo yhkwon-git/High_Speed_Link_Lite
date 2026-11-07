@@ -1,7 +1,10 @@
 `timescale 1ns/100fs
 // -----------------------------------------------------------------------------
 // hsl_csr
-// Host-facing control and status. Byte-addressed, 32-bit, combinational read.
+// Host-facing control and status. Byte-addressed, 32-bit. Read data leaves a
+// register: cfg_rdata holds the register at cfg_addr as of the last clock
+// edge, so a read takes one clock and no input reaches cfg_rdata through
+// logic alone (the chip STA flagged that feedthrough against the I/O budget).
 //
 // soft_rst is produced here and must not reset this block. Otherwise the bit
 // clears itself and the datapath cannot be held in reset.
@@ -68,6 +71,7 @@ module hsl_csr (
   logic [2:0]  rt_sel;
   logic        lb_single;
   logic [3:0]  lb_fail_lane;
+  logic [31:0] rdata_d;
   integer      li;
 
   always_ff @(posedge clk or negedge rst_n) begin
@@ -175,19 +179,27 @@ module hsl_csr (
 
   always_comb begin
     case (cfg_addr)
-      CSR_ID:      cfg_rdata = HSL_ID;
-      CSR_VERSION: cfg_rdata = HSL_VERSION;
-      CSR_CTRL:    cfg_rdata = {24'h0, ctrl};
-      CSR_STATUS:  cfg_rdata = status;
-      CSR_TRAIN:   cfg_rdata = {16'h0, train_wait, 8'h0};
-      CSR_ERRCNT:  cfg_rdata = {16'h0, err_cnt};
-      CSR_REMAP:   cfg_rdata = {24'h0, repair_lane, 3'h0, repair_en};
-      CSR_TIMING0: cfg_rdata = TIMING0_DEFAULT;
-      CSR_TIMING1: cfg_rdata = TIMING1_DEFAULT;
-      CSR_LANE_BIST: cfg_rdata = lb_status;
-      CSR_RDTRAIN:   cfg_rdata = rt_status;
-      default:     cfg_rdata = 32'h0;
+      CSR_ID:        rdata_d = HSL_ID;
+      CSR_VERSION:   rdata_d = HSL_VERSION;
+      CSR_CTRL:      rdata_d = {24'h0, ctrl};
+      CSR_STATUS:    rdata_d = status;
+      CSR_TRAIN:     rdata_d = {16'h0, train_wait, 8'h0};
+      CSR_ERRCNT:    rdata_d = {16'h0, err_cnt};
+      CSR_REMAP:     rdata_d = {24'h0, repair_lane, 3'h0, repair_en};
+      CSR_TIMING0:   rdata_d = TIMING0_DEFAULT;
+      CSR_TIMING1:   rdata_d = TIMING1_DEFAULT;
+      CSR_LANE_BIST: rdata_d = lb_status;
+      CSR_RDTRAIN:   rdata_d = rt_status;
+      default:       rdata_d = 32'h0;
     endcase
+  end
+
+  always_ff @(posedge clk or negedge rst_n) begin
+    if (!rst_n) begin
+      cfg_rdata <= '0;
+    end else begin
+      cfg_rdata <= rdata_d;
+    end
   end
 endmodule
 

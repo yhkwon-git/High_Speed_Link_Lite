@@ -319,11 +319,14 @@ module tb_hsl_smoke;
     end
   endtask
 
+  // Read data leaves a register: the address goes out on negedge, the data
+  // is taken after the next posedge.
   task automatic csr_read(input logic [7:0] addr, output logic [31:0] data);
     begin
       @(negedge clk);
       cfg_we = 1'b0;
       cfg_addr = addr;
+      @(posedge clk);
       #1ps;
       data = cfg_rdata;
     end

@@ -35,6 +35,14 @@ create_clock -name rdqs -period $phy_period [get_ports pin_rdqs]
 # A real deck would constrain the synchronizer cell and still check recovery.
 set_false_path -from [get_ports rst_n]
 
+# Pre-layout: the synchronized reset (and soft_rst, which joins it) reaches
+# every flop's reset pin, about 2,700 of them. Like a clock tree, that tree is
+# built in place and route; until then synthesis treats it as an ideal
+# network. OpenSTA 3.1 accepts this command but does not apply it, so
+# syn/sta_chip.sh buffers the tree instead (syn/fanout_buffer.py). Unbuffered,
+# one gate drives every load and its delay is read far off the cell tables.
+set_ideal_network [get_pins {u_rst/rst_no u_csr/soft_rst}]
+
 # 40% of the controller period. The old 4.0 ns belonged to the 10 ns smoke clock.
 set_input_delay -clock clk 0.5 [get_ports {
   cfg_we
@@ -58,6 +66,13 @@ set_output_delay -clock clk 0.5 [get_ports {
   pin_cca
   rx_dly_code
 }]
+
+# CTRL and REMAP settings that steer the write data (PRBS payload, DBI rule,
+# lane repair) change only with the controller idle, and traffic follows
+# several clocks later (docs/03). Their paths into the TX word register get two
+# clocks. Data pins only: the reset pins keep their single-cycle recovery.
+set_multicycle_path 2 -setup -from [get_cells u_csr/*] -to [get_pins u_phy/u_mis/tx_word*/D]
+set_multicycle_path 1 -hold  -from [get_cells u_csr/*] -to [get_pins u_phy/u_mis/tx_word*/D]
 
 # Mission beats leave on clk_phy toward the analog serializer, and read beats
 # arrive with RDQS. 40% of the PHY period on each side.

@@ -76,12 +76,12 @@ module hsl_phy_top (
     .clk_phy  (clk_phy)
   );
 
-  always_ff @(negedge clk_phy or negedge rst_n) begin
-    if (!rst_n) begin
-      ck_en <= 1'b0;
-    end else begin
-      ck_en <= phy_en;
-    end
+  // The enable flop of the clock gate, taken on the falling PHY edge. Like the
+  // latch in an ICG cell it has no reset; phy_en itself resets to 0. With a
+  // reset, the release (launched on the controller clock) has half a PHY period
+  // to reach it, and the chip STA showed that is too short for recovery.
+  always_ff @(negedge clk_phy) begin
+    ck_en <= phy_en;
   end
   assign pin_ck = clk_phy & ck_en;
 
