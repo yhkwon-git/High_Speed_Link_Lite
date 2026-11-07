@@ -54,7 +54,27 @@ module hsl_phy_top (
   output logic                         pin_tx_dv,
   input  wire                          pin_rdqs,
   input  wire  [hsl_pkg::BEAT_W-1:0]   pin_rx_beat,
-  input  wire                          pin_rx_dv
+  input  wire                          pin_rx_dv,
+  output logic [2*hsl_pkg::DDR_BITS-1:0] pin_tx_ecc,
+  input  wire  [2*hsl_pkg::DDR_BITS-1:0] pin_rx_ecc,
+
+  input  wire                          ecc_en,
+  input  wire                          ecc_inj_arm,
+  input  wire  [31:0]                  ecc_inj_dmask,
+  input  wire  [6:0]                   ecc_inj_cmask,
+  input  wire                          ecc_st_start,
+  input  wire                          ecc_clear,
+  output logic                         ecc_inj_pend,
+  output logic                         ecc_st_busy,
+  output logic                         ecc_st_done,
+  output logic                         ecc_st_pass,
+  output logic [6:0]                   ecc_st_fails,
+  output logic [15:0]                  ecc_ce_cnt,
+  output logic [15:0]                  ecc_ue_cnt,
+  output logic                         ecc_log_v,
+  output logic                         ecc_log_ue,
+  output logic [6:0]                   ecc_log_syn,
+  output logic [hsl_pkg::ADDR_W-1:0]   ecc_log_addr
 );
   import hsl_pkg::*;
 
@@ -110,6 +130,7 @@ module hsl_phy_top (
     .ap           (ap),
     .wrdata_en    (wrdata_en),
     .wdata        (dbi_word),
+    .wraw         (payload),
     .dbi_flags    (dbi_flags),
     .loopback     (loopback),
     .lb_data      (lb_hold),
@@ -120,12 +141,31 @@ module hsl_phy_top (
     .cca          (pin_cca),
     .tx_beat      (pin_tx_beat),
     .tx_dqs       (pin_tx_dqs),
+    .tx_ecc       (pin_tx_ecc),
     .tx_dv        (pin_tx_dv),
     .rdqs         (pin_rdqs),
     .rx_beat      (pin_rx_beat),
     .rx_dv        (pin_rx_dv),
+    .rx_ecc       (pin_rx_ecc),
     .rddata_valid (rddata_valid),
-    .rddata       (rddata)
+    .rddata       (rddata),
+    .ecc_en        (ecc_en),
+    .ecc_inj_arm   (ecc_inj_arm),
+    .ecc_inj_dmask (ecc_inj_dmask),
+    .ecc_inj_cmask (ecc_inj_cmask),
+    .ecc_st_start  (ecc_st_start),
+    .ecc_clear     (ecc_clear),
+    .ecc_inj_pend  (ecc_inj_pend),
+    .ecc_st_busy   (ecc_st_busy),
+    .ecc_st_done   (ecc_st_done),
+    .ecc_st_pass   (ecc_st_pass),
+    .ecc_st_fails  (ecc_st_fails),
+    .ecc_ce_cnt    (ecc_ce_cnt),
+    .ecc_ue_cnt    (ecc_ue_cnt),
+    .ecc_log_v     (ecc_log_v),
+    .ecc_log_ue    (ecc_log_ue),
+    .ecc_log_syn   (ecc_log_syn),
+    .ecc_log_addr  (ecc_log_addr)
   );
 
   // lb_rx_data equals the write payload (pre-DBI, pre-repair) while loopback

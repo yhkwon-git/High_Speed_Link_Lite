@@ -21,6 +21,9 @@
 //          retest, fuse program and load after reset, fuse ECC (1 bit
 //          corrected, 2 bits dropped), not repairable, random fault maps
 //          against a reference
+//   T15    ECC: decoder self-test (and a broken decoder), injected 1-bit data
+//          and check-bit errors corrected and logged, a 2-bit error detected,
+//          a stuck array bit corrected, ECC off
 // Every host response is checked against a reference memory (scoreboard).
 // Controller half-period is CTRL_PERIOD_PS/2 = 625 ps (800 MHz).
 `timescale 1ns/100fs
@@ -80,6 +83,8 @@ module tb_hsl_smoke;
   // programmable words (a bit only goes 0 -> 1), read back one clock after
   // fz_rd. The fuses keep their value across chip resets.
   wire  [RT_N*RT_W-1:0] rep_tab;
+  wire  [2*DDR_BITS-1:0] pin_tx_ecc;
+  wire  [2*DDR_BITS-1:0] pin_rx_ecc;
   wire  [1:0]           fz_addr;
   wire                  fz_rd;
   wire                  fz_pgm;
@@ -107,7 +112,8 @@ module tb_hsl_smoke;
     .pin_rdqs(pin_rdqs), .pin_rx_beat(beat_to_phy), .pin_rx_dv(dram_rx_dv),
     .rx_dly_code(rx_dly_code),
     .rep_tab(rep_tab), .fz_addr(fz_addr), .fz_rd(fz_rd), .fz_rdata(fz_rdata),
-    .fz_pgm(fz_pgm), .fz_wdata(fz_wdata)
+    .fz_pgm(fz_pgm), .fz_wdata(fz_wdata),
+    .pin_tx_ecc(pin_tx_ecc), .pin_rx_ecc(pin_rx_ecc)
   );
 
   dram_channel_behav u_dram (
@@ -116,6 +122,7 @@ module tb_hsl_smoke;
     .mr_dbi_en(mr_dbi_en), .mr_dbi_ac(mr_dbi_ac),
     .mr_repair_en(mr_repair_en), .mr_repair_lane(mr_repair_lane),
     .rx_dly(rx_dly_code), .eye_lo(eye_lo), .eye_hi(eye_hi), .rep_tab(rep_tab),
+    .pin_tx_ecc(pin_tx_ecc), .pin_rx_ecc(pin_rx_ecc),
     .pin_rca(pin_rca), .pin_cca(pin_cca),
     .pin_tx_beat(beat_to_dram), .pin_tx_dqs(pin_tx_dqs), .pin_tx_dv(pin_tx_dv),
     .pin_rdqs(pin_rdqs), .pin_rx_beat(dram_rx_beat), .pin_rx_dv(dram_rx_dv)
@@ -2354,6 +2361,166 @@ module tb_hsl_smoke;
     end
   endtask
 
+  // ---------------------------------------------------------------------------
+  // T15: ECC. The decoder self-test (and a decoder with its correction flag
+  // forced off, which the self-test must catch), then traffic with ECC on:
+  // clean words, a 1-bit data error and a 1-bit check-bit error injected at
+  // the PHY (corrected, counted, first one logged with its host address and
+  // syndrome), a 2-bit error (detected, data passed through), a stuck array
+  // bit (corrected), and the same word read with ECC off (raw).
+  // ---------------------------------------------------------------------------
+  task automatic t15_last(output logic [DATA_W-1:0] d);
+    d = rsp_log[(rsp_n - 1) % 256];
+  endtask
+
+  task automatic run_t15();
+    integer      t15bad;
+    integer      k;
+    logic [31:0] v;
+    logic [31:0] cnt;
+    logic [31:0] ad;
+    logic [DATA_W-1:0] d;
+    logic [ADDR_W-1:0] a;
+    begin
+      t15bad = 0;
+      soft_reset();
+      arm_mission(32'h0);
+
+      // Self-test: 78 codewords through the datapath decoder.
+      csr_write(CSR_ECC, 32'h4);
+      v = 32'h4;
+      while (v[2] === 1'b1) csr_read(CSR_ECC, v);
+      if ((v[4:3] !== 2'b11) || (v[22:16] !== 7'd0)) begin
+        $display("[T15] self-test: %h", v);
+        t15bad = t15bad + 1;
+      end
+      force dut.u_phy.u_mis.u_ecc.dec_ce = 1'b0;
+      csr_write(CSR_ECC, 32'h4);
+      v = 32'h4;
+      while (v[2] === 1'b1) csr_read(CSR_ECC, v);
+      release dut.u_phy.u_mis.u_ecc.dec_ce;
+      if ((v[4:3] !== 2'b01) || (v[22:16] !== 7'd39)) begin
+        $display("[T15] self-test with the correction flag stuck at 0: %h", v);
+        t15bad = t15bad + 1;
+      end
+      $display("[T15] decoder self-test: 78 codewords PASS; with its correction flag forced to 0: FAIL, %0d codewords wrong",
+               v[22:16]);
+
+      // ECC on. 16 clean words in bank 3, row 40.
+      csr_write(CSR_ECC, 32'h1);
+      for (k = 0; k < 16; k = k + 1) host_write(host_addr(2'd3, 8'h40, 4'(k)), 32'hC0DE_0000 + 32'(k * 4099));
+      host_idle();
+      for (k = 0; k < 16; k = k + 1) host_read(host_addr(2'd3, 8'h40, 4'(k)));
+      host_idle();
+      csr_read(CSR_ECC_CNT, cnt);
+      if (cnt !== 32'h0) begin
+        $display("[T15] clean traffic: counts %h", cnt);
+        t15bad = t15bad + 1;
+      end
+
+      // 1-bit data error (bit 9): corrected, counted, logged.
+      a = host_addr(2'd3, 8'h41, 4'd2);
+      csr_write(CSR_ECC_INJ, 32'h1 << 9);
+      csr_write(CSR_ECC, 32'h3);
+      host_write(a, 32'h1234_5678);
+      host_idle();
+      host_read(a);
+      host_idle();
+      csr_read(CSR_ECC, v);
+      csr_read(CSR_ECC_CNT, cnt);
+      csr_read(CSR_ECC_ADDR, ad);
+      t15_last(d);
+      // Data bit 9 sits at code position 14: syndrome 01110, overall parity 1.
+      if ((d !== 32'h1234_5678) || (cnt !== 32'h0000_0001) || (v[6:5] !== 2'b01) ||
+          (v[14:8] !== 7'h4E) || (ad[13:0] !== a) || (v[1] !== 1'b0)) begin
+        $display("[T15] 1-bit data error: read %h, ECC %h, counts %h, address %h", d, v, cnt, ad);
+        t15bad = t15bad + 1;
+      end
+      $display("[T15] 1-bit data error (bit 9): read back corrected %h; logged at %h, syndrome %h", d, ad[13:0],
+               v[14:8]);
+
+      // 1-bit check-bit error (check bit 3 = code bit 4): corrected; the log
+      // keeps the first error.
+      csr_write(CSR_ECC_INJ, 32'h0);
+      csr_write(CSR_ECC, 32'h3 | (32'h1 << (8 + 3)));
+      host_write(host_addr(2'd3, 8'h41, 4'd3), 32'h0BAD_F00D);
+      host_idle();
+      host_read(host_addr(2'd3, 8'h41, 4'd3));
+      host_idle();
+      csr_read(CSR_ECC_CNT, cnt);
+      csr_read(CSR_ECC_ADDR, ad);
+      t15_last(d);
+      if ((d !== 32'h0BAD_F00D) || (cnt !== 32'h0000_0002) || (ad[13:0] !== a)) begin
+        $display("[T15] 1-bit check error: read %h, counts %h, address %h", d, cnt, ad);
+        t15bad = t15bad + 1;
+      end
+
+      // 2-bit error (data bits 0 and 1): detected, not corrected.
+      a = host_addr(2'd3, 8'h41, 4'd4);
+      csr_write(CSR_ECC, 32'h1);
+      csr_write(CSR_ECC_INJ, 32'h3);
+      csr_write(CSR_ECC, 32'h3);
+      sb_on = 1'b0;
+      host_write(a, 32'hFACE_0000);
+      host_idle();
+      host_read(a);
+      host_idle();
+      sb_on = 1'b1;
+      csr_read(CSR_ECC_CNT, cnt);
+      t15_last(d);
+      if ((d !== 32'hFACE_0003) || (cnt !== 32'h0001_0002)) begin
+        $display("[T15] 2-bit error: read %h, counts %h", d, cnt);
+        t15bad = t15bad + 1;
+      end
+      $display("[T15] 2-bit error (bits 0, 1): uncorrectable counted, data passed through as %h", d);
+
+      // A stuck array bit (SA0 on bit 17 of a word written as all ones).
+      clear_faults();
+      set_fault(0, 1, host_addr(2'd3, 8'h41, 4'd5), 17, host_addr(2'd3, 8'h41, 4'd5), 17, 0, 0, 0);
+      host_write(host_addr(2'd3, 8'h41, 4'd5), 32'hFFFF_FFFF);
+      host_idle();
+      host_read(host_addr(2'd3, 8'h41, 4'd5));
+      host_idle();
+      csr_read(CSR_ECC_CNT, cnt);
+      t15_last(d);
+      if ((d !== 32'hFFFF_FFFF) || (cnt !== 32'h0001_0003)) begin
+        $display("[T15] stuck array bit: read %h, counts %h", d, cnt);
+        t15bad = t15bad + 1;
+      end
+
+      // ECC off: the same word comes back raw, and nothing is counted.
+      csr_write(CSR_ECC, 32'h0);
+      sb_on = 1'b0;
+      host_read(host_addr(2'd3, 8'h41, 4'd5));
+      host_idle();
+      sb_on = 1'b1;
+      csr_read(CSR_ECC_CNT, v);
+      t15_last(d);
+      if ((d !== 32'hFFFD_FFFF) || (v !== cnt)) begin
+        $display("[T15] ECC off: read %h, counts %h", d, v);
+        t15bad = t15bad + 1;
+      end
+      $display("[T15] stuck array bit 17: corrected with ECC on (%h), raw with ECC off (%h); counts CE %0d UE %0d",
+               32'hFFFF_FFFF, d, cnt[15:0], cnt[31:16]);
+      clear_faults();
+
+      // Clear.
+      csr_write(CSR_ECC, 32'h8);
+      csr_read(CSR_ECC_CNT, cnt);
+      csr_read(CSR_ECC, v);
+      if ((cnt !== 32'h0) || (v[5] !== 1'b0)) begin
+        $display("[T15] clear: counts %h, ECC %h", cnt, v);
+        t15bad = t15bad + 1;
+      end
+
+      if (t15bad == 0) begin
+        $display("[T15] PASS");
+      end else begin
+        errors = errors + t15bad;
+      end
+    end
+  endtask
+
   initial begin
     errors = 0;
     // block_errors is driven by the u_blocks output port only.
@@ -2408,6 +2575,7 @@ module tb_hsl_smoke;
     run_t12();
     run_t13();
     run_t14();
+    run_t15();
 
     if (sb_err != 0) begin
       $display("[SB] %0d read mismatches over the run", sb_err);

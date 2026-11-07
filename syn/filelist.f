@@ -18,6 +18,7 @@ rtl/phy/hsl_tx_gear.sv
 rtl/phy/hsl_deskew.sv
 rtl/phy/hsl_cdc_fifo.sv
 rtl/phy/hsl_phy_clk.sv
+rtl/phy/hsl_ecc.sv
 rtl/phy/hsl_phy_mis.sv
 rtl/phy/hsl_phy_top.sv
 rtl/phy/hsl_rd_train.sv

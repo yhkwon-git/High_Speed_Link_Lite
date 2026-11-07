@@ -79,7 +79,11 @@ module hsl_base_die_lite (
   output logic                                       fz_rd,
   input  wire  [hsl_pkg::FZ_W-1:0]                   fz_rdata,
   output logic                                       fz_pgm,
-  output logic [hsl_pkg::FZ_W-1:0]                   fz_wdata
+  output logic [hsl_pkg::FZ_W-1:0]                   fz_wdata,
+
+  // ECC pins: the check bits of each burst, beside the data beats.
+  output logic [2*hsl_pkg::DDR_BITS-1:0]             pin_tx_ecc,
+  input  wire  [2*hsl_pkg::DDR_BITS-1:0]             pin_rx_ecc
 );
   logic rst_sync_n;
   logic rst_logic_n;
@@ -132,6 +136,12 @@ module hsl_base_die_lite (
   logic [1:0] br_rows, br_cols;
   logic [3:0] fz_ce, fz_ue;
   logic [hsl_pkg::RT_N-1:0] fz_drop;
+  logic ecc_en, ecc_inj_arm, ecc_st_start, ecc_clear;
+  logic [31:0] ecc_inj_dmask;
+  logic [6:0] ecc_inj_cmask, ecc_st_fails, ecc_log_syn;
+  logic ecc_inj_pend, ecc_st_busy, ecc_st_done, ecc_st_pass, ecc_log_v, ecc_log_ue;
+  logic [15:0] ecc_ce_cnt, ecc_ue_cnt;
+  logic [hsl_pkg::ADDR_W-1:0] ecc_log_addr;
   logic [7:0] lb_lane_err;
   logic [4:0] lb_err_bursts;
   logic rt_start, rt_bist_start, rt_busy, rt_done, rt_ok;
@@ -219,7 +229,24 @@ module hsl_base_die_lite (
     .fz_loaded    (fz_loaded),
     .fz_ce        (fz_ce),
     .fz_ue        (fz_ue),
-    .fz_drop      (fz_drop)
+    .fz_drop      (fz_drop),
+    .ecc_en       (ecc_en),
+    .ecc_inj_arm  (ecc_inj_arm),
+    .ecc_inj_dmask(ecc_inj_dmask),
+    .ecc_inj_cmask(ecc_inj_cmask),
+    .ecc_st_start (ecc_st_start),
+    .ecc_clear    (ecc_clear),
+    .ecc_inj_pend (ecc_inj_pend),
+    .ecc_st_busy  (ecc_st_busy),
+    .ecc_st_done  (ecc_st_done),
+    .ecc_st_pass  (ecc_st_pass),
+    .ecc_st_fails (ecc_st_fails),
+    .ecc_ce_cnt   (ecc_ce_cnt),
+    .ecc_ue_cnt   (ecc_ue_cnt),
+    .ecc_log_v    (ecc_log_v),
+    .ecc_log_ue   (ecc_log_ue),
+    .ecc_log_syn  (ecc_log_syn),
+    .ecc_log_addr (ecc_log_addr)
   );
 
   hsl_rd_train u_rd_train (
@@ -394,7 +421,26 @@ module hsl_base_die_lite (
     .pin_tx_dv    (pin_tx_dv),
     .pin_rdqs     (pin_rdqs),
     .pin_rx_beat  (pin_rx_beat),
-    .pin_rx_dv    (pin_rx_dv)
+    .pin_rx_dv    (pin_rx_dv),
+    .pin_tx_ecc   (pin_tx_ecc),
+    .pin_rx_ecc   (pin_rx_ecc),
+    .ecc_en       (ecc_en),
+    .ecc_inj_arm  (ecc_inj_arm),
+    .ecc_inj_dmask(ecc_inj_dmask),
+    .ecc_inj_cmask(ecc_inj_cmask),
+    .ecc_st_start (ecc_st_start),
+    .ecc_clear    (ecc_clear),
+    .ecc_inj_pend (ecc_inj_pend),
+    .ecc_st_busy  (ecc_st_busy),
+    .ecc_st_done  (ecc_st_done),
+    .ecc_st_pass  (ecc_st_pass),
+    .ecc_st_fails (ecc_st_fails),
+    .ecc_ce_cnt   (ecc_ce_cnt),
+    .ecc_ue_cnt   (ecc_ue_cnt),
+    .ecc_log_v    (ecc_log_v),
+    .ecc_log_ue   (ecc_log_ue),
+    .ecc_log_syn  (ecc_log_syn),
+    .ecc_log_addr (ecc_log_addr)
   );
 endmodule
 

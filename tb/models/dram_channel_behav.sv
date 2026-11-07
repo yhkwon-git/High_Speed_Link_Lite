@@ -49,6 +49,8 @@
 //   CFid  the same transition forces the victim bit to flt_val
 //   CFst  while the aggressor bit is flt_s, the victim bit reads flt_val
 // Spare rows and columns take the accesses rep_tab names (see spare_of).
+// The two ECC pins' 8 bits per burst are stored beside each word and sent back
+// with its read beats; array faults only touch data bits.
 // The array starts at all zeros. tb/march_ref.py implements the same rules in a
 // reference March simulator; it gives the expected MBIST detection table (T13).
 //
@@ -77,10 +79,12 @@ module dram_channel_behav (
   input  wire  [hsl_pkg::RCA_W-1:0]    pin_rca,
   input  wire  [hsl_pkg::CCA_W-1:0]    pin_cca,
   input  wire  [hsl_pkg::BEAT_W-1:0]   pin_tx_beat,
+  input  wire  [2*hsl_pkg::DDR_BITS-1:0] pin_tx_ecc,   // ECC pins (check bits)
   input  wire  [hsl_pkg::DDR_BITS-1:0] pin_tx_dqs,
   input  wire                          pin_tx_dv,
   output logic                         pin_rdqs,
   output logic [hsl_pkg::BEAT_W-1:0]   pin_rx_beat,
+  output logic [2*hsl_pkg::DDR_BITS-1:0] pin_rx_ecc,
   output logic                         pin_rx_dv
 );
   import hsl_pkg::*;
@@ -94,6 +98,9 @@ module dram_channel_behav (
   logic              open_v   [0:BANK_N-1];
   logic [DATA_W-1:0] mem [0:BANK_N-1][0:(1<<ROW_W)-1][0:(1<<COL_W)-1];
   logic [DATA_W-1:0] spr_mem [0:hsl_pkg::RT_N-1][0:15];   // spares (spare_of)
+  // The ECC pins' 8 bits per burst are stored beside each word (no faults).
+  logic [7:0]        mem_ecc [0:BANK_N-1][0:(1<<ROW_W)-1][0:(1<<COL_W)-1];
+  logic [7:0]        spr_ecc [0:hsl_pkg::RT_N-1][0:15];
   integer            n_spare = 0;   // array accesses that went to a spare
 
   localparam int NFLT   = 16;
@@ -122,6 +129,7 @@ module dram_channel_behav (
       for (ir = 0; ir < (1 << ROW_W); ir = ir + 1) begin
         for (ic = 0; ic < (1 << COL_W); ic = ic + 1) begin
           mem[ib][ir][ic] = '0;
+          mem_ecc[ib][ir][ic] = '0;
         end
       end
     end
@@ -129,7 +137,10 @@ module dram_channel_behav (
       flt_kind[ib] = F_NONE;
     end
     for (ib = 0; ib < hsl_pkg::RT_N; ib = ib + 1) begin
-      for (ic = 0; ic < 16; ic = ic + 1) spr_mem[ib][ic] = '0;
+      for (ic = 0; ic < 16; ic = ic + 1) begin
+        spr_mem[ib][ic] = '0;
+        spr_ecc[ib][ic] = '0;
+      end
     end
   end
 
@@ -159,6 +170,10 @@ module dram_channel_behav (
   integer             wq_tail;
   // Read path: words queued on the RD, launched on RDQS.
   logic [DATA_W-1:0]  rq_word [0:QN-1];
+  logic [7:0]         rq_ecc  [0:QN-1];
+  logic [7:0]         wdone_ecc;
+  logic [3:0]         wcap_lo_e;
+  logic [3:0]         rx_hi_e;
   integer             rq_due  [0:QN-1];
   integer             rq_head;
   integer             rq_tail;
@@ -311,6 +326,24 @@ module dram_channel_behav (
     end
   endfunction
 
+  task automatic ecc_write(input integer b, input integer r, input integer c, input logic [7:0] e);
+    integer k;
+    begin
+      k = spare_of(b, r, c);
+      if (k >= 0) spr_ecc[k][(k < hsl_pkg::SPR_N) ? c : (r % 16)] = e;
+      else        mem_ecc[b][r][c] = e;
+    end
+  endtask
+
+  function automatic logic [7:0] ecc_read(input integer b, input integer r, input integer c);
+    integer k;
+    begin
+      k = spare_of(b, r, c);
+      if (k >= 0) ecc_read = spr_ecc[k][(k < hsl_pkg::SPR_N) ? c : (r % 16)];
+      else        ecc_read = mem_ecc[b][r][c];
+    end
+  endfunction
+
   task automatic array_write(input integer b, input integer r, input integer c,
                              input logic [DATA_W-1:0] w_in);
     logic [DATA_W-1:0] o;
@@ -434,6 +467,8 @@ module dram_channel_behav (
         end else begin
           array_write(int'(wq_bank[wq_head % QN]), int'(wq_row[wq_head % QN]),
                       int'(wq_col[wq_head % QN]), burst_in(wdone_pins, mr_repair_en, mr_repair_lane));
+          ecc_write(int'(wq_bank[wq_head % QN]), int'(wq_row[wq_head % QN]),
+                    int'(wq_col[wq_head % QN]), wdone_ecc);
           wq_head = wq_head + 1;
         end
       end
@@ -477,6 +512,7 @@ module dram_channel_behav (
               proto("read queue overflow");
             end
             rq_word[rq_tail % QN] = array_read(int'(cbank), int'(open_row[cbank]), int'(ccol));
+            rq_ecc[rq_tail % QN]  = ecc_read(int'(cbank), int'(open_row[cbank]), int'(ccol));
             rq_due[rq_tail % QN]  = rcyc + RL_RDQS;
             rq_tail = rq_tail + 1;
             p_at = imax(pre_at[cbank], ccyc + tRTP);
@@ -552,6 +588,8 @@ module dram_channel_behav (
       wcap_lo    <= '0;
       wdone_tog  <= 1'b0;
       wdone_pins <= '0;
+      wdone_ecc  <= '0;
+      wcap_lo_e  <= '0;
       wdqs_err   <= 0;
     end else if (pin_tx_dv) begin
       if (pin_tx_dqs !== {{(DDR_BITS-1){1'b0}}, 1'b1}) begin
@@ -559,9 +597,11 @@ module dram_channel_behav (
       end
       if (!wcap_half) begin
         wcap_lo   <= pin_tx_beat;
+        wcap_lo_e <= pin_tx_ecc;
         wcap_half <= 1'b1;
       end else begin
         wdone_pins <= {pin_tx_beat, wcap_lo};
+        wdone_ecc  <= {pin_tx_ecc, wcap_lo_e};
         wdone_tog  <= ~wdone_tog;
         wcap_half  <= 1'b0;
       end
@@ -588,14 +628,18 @@ module dram_channel_behav (
       rx_last_dv   <= 1'b0;
       rx_last_byte <= '0;
       pin_rx_beat  <= '0;
+      pin_rx_ecc   <= '0;
+      rx_hi_e      <= '0;
       pin_rx_dv    <= 1'b0;
     end else begin
       rcyc        <= rcyc + 1;
       pin_rx_beat <= '0;
+      pin_rx_ecc  <= '0;
       pin_rx_dv   <= 1'b0;
       rx_last_dv  <= 1'b0;
       if (rx_phase) begin
         pin_rx_beat <= rx_hi;
+        pin_rx_ecc  <= rx_hi_e;
         pin_rx_dv   <= 1'b1;
         rx_phase    <= 1'b0;
         rx_last_dv  <= 1'b1;
@@ -614,8 +658,10 @@ module dram_channel_behav (
                                            mr_repair_en, mr_repair_lane);
         end
         pin_rx_beat  <= pins[BEAT_W-1:0];
+        pin_rx_ecc   <= rq_ecc[rq_head % QN][3:0];
         pin_rx_dv    <= 1'b1;
         rx_hi        <= pins[WORD_PW-1:BEAT_W];
+        rx_hi_e      <= rq_ecc[rq_head % QN][7:4];
         rx_phase     <= 1'b1;
         rx_last_byte <= enc[DATA_W-1 -: DQ_W];
         rq_head      <= rq_head + 1;

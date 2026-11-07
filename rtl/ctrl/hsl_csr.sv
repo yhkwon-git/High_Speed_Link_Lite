@@ -17,6 +17,7 @@
 // the same way for read leveling and reads back one lane's result, chosen by
 // [6:4] of the last write (layouts in hsl_pkg). BIRA, REPAIR and FUSE run the
 // repair analysis, read back the repair table and program / load the fuses.
+// ECC, ECC_INJ, ECC_CNT and ECC_ADDR control and observe the data ECC.
 // Map: docs/03_microarchitecture.md
 // -----------------------------------------------------------------------------
 `default_nettype none
@@ -61,6 +62,12 @@ module hsl_csr (
   output logic        rp_clear,
   output logic        fz_program,
   output logic        fz_load,
+  output logic        ecc_en,
+  output logic        ecc_inj_arm,
+  output logic [31:0] ecc_inj_dmask,
+  output logic [6:0]  ecc_inj_cmask,
+  output logic        ecc_st_start,
+  output logic        ecc_clear,
 
   input  wire  [3:0]  train_state,
   input  wire         train_done,
@@ -94,7 +101,18 @@ module hsl_csr (
   input  wire         fz_loaded,
   input  wire  [3:0]  fz_ce,
   input  wire  [3:0]  fz_ue,
-  input  wire  [hsl_pkg::RT_N-1:0] fz_drop
+  input  wire  [hsl_pkg::RT_N-1:0] fz_drop,
+  input  wire         ecc_inj_pend,
+  input  wire         ecc_st_busy,
+  input  wire         ecc_st_done,
+  input  wire         ecc_st_pass,
+  input  wire  [6:0]  ecc_st_fails,
+  input  wire  [15:0] ecc_ce_cnt,
+  input  wire  [15:0] ecc_ue_cnt,
+  input  wire         ecc_log_v,
+  input  wire         ecc_log_ue,
+  input  wire  [6:0]  ecc_log_syn,
+  input  wire  [hsl_pkg::ADDR_W-1:0] ecc_log_addr
 );
   import hsl_pkg::*;
 
@@ -139,6 +157,12 @@ module hsl_csr (
       fz_program  <= 1'b0;
       fz_load     <= 1'b0;
       rp_sel      <= '0;
+      ecc_en        <= 1'b0;
+      ecc_inj_arm   <= 1'b0;
+      ecc_inj_dmask <= '0;
+      ecc_inj_cmask <= '0;
+      ecc_st_start  <= 1'b0;
+      ecc_clear     <= 1'b0;
     end else begin
       train_start <= 1'b0;
       zq_done     <= 1'b0;
@@ -154,6 +178,9 @@ module hsl_csr (
       rp_clear    <= 1'b0;
       fz_program  <= 1'b0;
       fz_load     <= 1'b0;
+      ecc_inj_arm  <= 1'b0;
+      ecc_st_start <= 1'b0;
+      ecc_clear    <= 1'b0;
       if (cfg_we) begin
         case (cfg_addr)
           CSR_CTRL: ctrl <= cfg_wdata[7:0] & 8'hDF;
@@ -198,6 +225,14 @@ module hsl_csr (
             fz_program <= cfg_wdata[0];
             fz_load    <= cfg_wdata[1];
           end
+          CSR_ECC: begin
+            ecc_en        <= cfg_wdata[0];
+            ecc_inj_arm   <= cfg_wdata[1];
+            ecc_st_start  <= cfg_wdata[2];
+            ecc_clear     <= cfg_wdata[3];
+            ecc_inj_cmask <= cfg_wdata[14:8];
+          end
+          CSR_ECC_INJ: ecc_inj_dmask <= cfg_wdata;
           default: ;
         endcase
       end
@@ -270,6 +305,11 @@ module hsl_csr (
       CSR_BIRA:      rdata_d = {24'h0, br_cols, br_rows, 1'b0, br_ok, br_done, br_busy};
       CSR_REPAIR:    rdata_d = {14'h0, rp_sel, rep_tab[RT_W*rp_sel +: RT_W]};
       CSR_FUSE:      rdata_d = {16'h0, 4'(fz_drop), fz_ue, fz_ce, 2'b00, fz_loaded, fz_busy};
+      CSR_ECC:       rdata_d = {9'h0, ecc_st_fails, 1'b0, ecc_log_syn, 1'b0, ecc_log_ue, ecc_log_v,
+                                ecc_st_pass, ecc_st_done, ecc_st_busy, ecc_inj_pend, ecc_en};
+      CSR_ECC_INJ:   rdata_d = ecc_inj_dmask;
+      CSR_ECC_CNT:   rdata_d = {ecc_ue_cnt, ecc_ce_cnt};
+      CSR_ECC_ADDR:  rdata_d = {18'h0, ecc_log_addr};
       default:       rdata_d = 32'h0;
     endcase
   end

@@ -155,6 +155,22 @@ package hsl_pkg;
   localparam logic [7:0] CSR_REPAIR = 8'h3C;
   localparam logic [7:0] CSR_FUSE   = 8'h40;
 
+  // ECC: SECDED (39,32) on the data, check bits on 2 ECC pins (hsl_ecc).
+  // ECC write:      [0] enable, [1] arm an injection for the next write burst,
+  //                 [2] start the decoder self-test, [3] clear counters and
+  //                 log, [14:8] check bits to flip
+  // ECC read:       [0] enable, [1] injection pending, [2] self-test busy,
+  //                 [3] self-test done, [4] self-test pass, [5] an error is
+  //                 logged, [6] it was uncorrectable, [14:8] its syndrome
+  //                 {overall parity, s[5:0]}, [22:16] self-test failures
+  // ECC_INJ:        data bits to flip (RW)
+  // ECC_CNT read:   [15:0] corrected, [31:16] uncorrectable (saturating)
+  // ECC_ADDR read:  [13:0] host address of the first error
+  localparam logic [7:0] CSR_ECC      = 8'h44;
+  localparam logic [7:0] CSR_ECC_INJ  = 8'h48;
+  localparam logic [7:0] CSR_ECC_CNT  = 8'h4C;
+  localparam logic [7:0] CSR_ECC_ADDR = 8'h50;
+
   // Read leveling: one delay-line code per DQ lane toward the analog PHY.
   // RDTRAIN write: [0] start, [6:4] lane to read back.
   // RDTRAIN read:  [0] busy, [1] done, [2] every lane found an eye,

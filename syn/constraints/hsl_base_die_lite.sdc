@@ -80,15 +80,17 @@ set_output_delay -clock clk 0.5 [get_ports {
 set_multicycle_path 2 -setup -from [get_cells u_csr/*] -to [get_pins u_phy/u_mis/tx_word*/D]
 set_multicycle_path 1 -hold  -from [get_cells u_csr/*] -to [get_pins u_phy/u_mis/tx_word*/D]
 
-# Mission beats leave on clk_phy toward the analog serializer, and read beats
-# arrive with RDQS. 40% of the PHY period on each side.
+# Mission beats (data and ECC pins) leave on clk_phy toward the analog
+# serializer, and read beats arrive with RDQS. 40% of the PHY period on each side.
 set_output_delay -clock clk_phy 0.25 [get_ports {
   pin_tx_beat
+  pin_tx_ecc
   pin_tx_dqs
   pin_tx_dv
 }]
 set_input_delay -clock rdqs 0.25 [get_ports {
   pin_rx_beat
+  pin_rx_ecc
   pin_rx_dv
 }]
 
