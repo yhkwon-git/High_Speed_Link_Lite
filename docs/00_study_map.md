@@ -1,6 +1,6 @@
 # 스터디 맵
 
-이 저장소는 HBM base die 디지털 RTL의 작업 순서를 한 채널 슬라이스에 옮겨 놓은 것이다. 고객 요구를 스펙으로 적고, PPA로 구조를 고르고, RTL로 구현한 뒤 검증하고, Physical Design에 넘길 가이드를 쓴다. 다루는 블록은 고속 디지털 PHY, DRAM 메모리 컨트롤러, DFT/DFD다.
+이 저장소는 HBM base die 디지털 RTL의 작업 순서를 한 채널 슬라이스에 옮겨 놓은 것이다. 고객 요구를 스펙으로 적고, PPA로 구조를 고르고, RTL로 구현한 뒤 검증하고, Physical Design에 넘길 가이드를 쓴다. 다루는 블록은 고속 디지털 PHY, DRAM 메모리 컨트롤러, DFT/DFD다. 컨트롤러를 base die에 두는 것은 custom HBM 구조를 전제로 한 것이다. 표준 HBM(HBM3E까지)에서는 컨트롤러가 호스트 SoC에 있다.
 
 | 항목 | 이 프로젝트에서 보는 곳 |
 | --- | --- |
@@ -18,7 +18,7 @@
 
 ## 3분 설명
 
-1. Base die 디지털은 호스트와 DRAM 코어 다이 사이에 있다. 스터디 슬라이스는 DQ 8비트, 버스트 4, 뱅크 4개다.
+1. Base die 디지털은 호스트와 DRAM 코어 다이 사이에 있다. 표준 HBM에서는 컨트롤러가 호스트에 있고, 이 슬라이스는 컨트롤러를 base die로 옮긴 custom HBM 구조를 가정한다. 스터디 슬라이스는 DQ 8비트, 버스트 4, 뱅크 4개다.
 2. 스펙을 먼저 적고, 컨트롤러와 PHY를 버스트 단위로 나눴다. 시뮬 클럭은 컨트롤러 800 MHz, PHY 1.6 GHz다. 뱅크 타이밍을 먼저 닫은 뒤 기어박스와 비동기 FIFO를 그 클럭에 올렸다.
 3. 지금 도는 것은 CSR, 리셋 동기화, done 펄스 트레이닝, 메모리 컨트롤러(읽기 · 쓰기 큐, FR-FCFS, per-bank refresh), DFI 형태 경계, mission 데이터패스(CA 핀, TX 기어와 WDQS, RDQS 캡처와 Gray FIFO), DBI(DC · AC), shift 레인 리페어와 레인 BIST, 읽기 레벨링, PRBS 병렬 루프백이다.
 4. 회귀는 `sim/run_smoke.ps1` 한 번이다. 스모크와 T1–T12가 같이 돌고, 호스트 응답은 모두 스코어보드가, 핀의 명령은 채널 모델이 검사한다. PD 가이드의 포인터 경로는 `set_max_delay`이고 false path가 아니다.

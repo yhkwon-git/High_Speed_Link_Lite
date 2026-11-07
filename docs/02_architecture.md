@@ -12,6 +12,8 @@ hsl_base_die_lite
 아날로그 PHY + DRAM 코어 다이
 ```
 
+이 경계는 custom HBM 구조를 전제로 한다. 표준 HBM(HBM3E까지)이라면 컨트롤러와 PHY 트레이닝 로직은 호스트 SoC에 있고, base die의 경계는 호스트가 보낸 행 · 열 명령을 받는 핀에서 시작한다. custom HBM은 로직 공정으로 만든 base die에 컨트롤러를 옮기고, 그 뒤에 core die로 가는 TSV PHY를 둔다. 이 저장소의 핀은 그 TSV 쪽 경계 자리에 공개된 HBM 인터페이스 개념을 축소해 둔 것이다.
+
 메모리 컨트롤러는 뱅크와 버스트를 안다. PHY는 핀의 UI와 스트로브를 안다. 이 분리는 DFI에서 가져온 발상이고, 포트 정의는 DFI가 아니다. 둘 사이는 DFI 형태의 신호다: 행 명령(cmd, bank, row)과 열 명령(cmd, bank, col, auto-precharge)이 매 클럭, 쓰기 데이터는 WR 뒤 WL 클럭에 `wrdata_en`과 함께, 읽기 데이터는 `rddata_valid`와 함께 돌아온다.
 
 ## 선택지

@@ -4,7 +4,8 @@
 
 | 용어 | 이 프로젝트에서의 뜻 |
 | --- | --- |
-| Base die | HBM 스택 맨 아래의 로직 다이. 이 저장소가 모델링하는 쪽 |
+| Base die | HBM 스택 맨 아래의 로직 다이. 표준 HBM에서는 인터페이스 PHY, TSV 연결, 테스트 로직(IEEE 1500, MBIST)을 담고, 메모리 컨트롤러는 호스트 SoC에 있다. 이 저장소는 컨트롤러까지 base die에 둔 custom HBM 구조를 모델링한다 |
+| Custom HBM | HBM4 세대부터 base die를 로직 공정으로 만들면서 나온, 고객 로직(메모리 컨트롤러 등)을 base die에 넣는 HBM. 이 저장소의 전제 |
 | Core die | 위에 쌓인 DRAM 다이. 여기서는 `dram_channel_behav` |
 | TSV | 다이를 수직으로 잇는 비아. 디지털 RTL 밖 |
 | 인터포저 | 호스트와 HBM을 얹는 실리콘 기판 |
