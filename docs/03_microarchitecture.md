@@ -30,6 +30,10 @@ hsl_base_die_lite
     hsl_err_cnt
     hsl_lane_bist
     hsl_mbist
+    hsl_bira
+    hsl_repair
+      hsl_secded_enc
+      hsl_secded_dec
 hsl_deskew                 블록 테스트만
 ```
 
@@ -74,6 +78,9 @@ hsl_deskew                 블록 테스트만
 | `0x2C` | MBIST | RW | 0 | 쓰기 `[0]` start, `[2:1]` 알고리즘(0 MATS+, 1 March X, 2 March C-, 3은 2로), `[5:4]` bank, `[15:8]` 첫 row, `[19:16]` row 수 − 1, `[22:20]` log2 컬럼 수(4보다 크면 4). 읽기 `[0]` busy, `[1]` done, `[2]` pass(done이고 실패 0), `[3]` 로그 넘침, `[8:4]` 로그의 실패 워드 수, `[31:16]` 실패 읽기 수(포화) |
 | `0x30` | MBIST_LOG | RW | 0 | 쓰기 `[3:0]` 읽을 로그 항목. 읽기 `[13:0]` 첫 실패 읽기의 호스트 주소, `[23:16]` 그 항목 `{row offset[3:0], col[3:0]}`, `[27:24]` 항목 번호 |
 | `0x34` | MBIST_BITS | RO | 0 | 첫 실패 읽기에서 기대값과 다른 비트 |
+| `0x38` | BIRA | RW | 0 | 쓰기 `[0]` start(마지막 MBIST 로그, MBIST가 돌 때는 무시), `[1]` 결과를 repair 표에(수리 가능일 때만), `[2]` 표 비우기. 읽기 `[0]` busy, `[1]` done, `[2]` 수리 가능, `[5:4]` 쓴 spare row 수, `[7:6]` 쓴 spare col 수 |
+| `0x3C` | REPAIR | RW | 0 | 쓰기 `[1:0]` 읽을 표 항목(0 · 1 row spare, 2 · 3 col spare). 읽기 `[15:0]` 항목 `{[15] valid, [13:12] bank, [11:4] row(col spare는 블록 << 4), [3:0] col}`, `[17:16]` 항목 번호 |
+| `0x40` | FUSE | RW | 0 | 쓰기 `[0]` 표를 fuse에 프로그램, `[1]` fuse 다시 로드. 읽기 `[0]` busy(리셋 뒤 자동 로드 포함), `[1]` 로드 끝남, `[7:4]` 정정한 워드 수, `[11:8]` 정정 못 한 워드 수, `[15:12]` 버린 항목 |
 
 TIMING 필드는 8비트이고, 오른쪽이 LSB다. tRCD와 tWTR_L이 `[7:0]`에 있다. 쓰기는 무시한다. 타이밍은 컨트롤러가 상수로 지키므로, 바꾸려면 컨트롤러 저장소의 `dram_pkg`를 고친다.
 
@@ -183,3 +190,19 @@ NEXT: 같은 요소의 두 번째 연산, 다음 워드(요소 방향), 다음 �
 - **기록**: 실패 읽기마다 `fail_cnt`(16 bit 포화). 첫 실패는 주소와 다른 비트를 남긴다. 로그는 실패 워드를 `{row offset, col}`로 최대 16개, 같은 워드는 한 번만(16개 비교) 넣고, 17번째 새 워드부터는 `log_ovf`를 세운다.
 - **포트 공유**: `hsl_dft_top`이 레인 BIST와 MBIST를 한 테스트 포트(`tp_*`)로 묶는다. 한 번에 하나만 돌고, 다른 엔진이 도는 동안 또는 같은 클럭에 온 start는 잡아 두었다가 포트가 비면 낸다(레인 BIST 우선). 읽기 레벨링이 자기가 낸 레인 BIST의 busy를 기다리므로 start를 버리지 않는다.
 - **타이밍**: 요청 출력(`req_addr`, `req_write`, `req_wdata`)은 플롭이다. 조합 주소(가변 shift, 덧셈, XOR 맵)가 컨트롤러의 주소 비교 앞에 붙으면 칩 STA에서 −0.749 ns였다.
+
+## Repair
+
+```text
+BIRA:   IDLE --start--> SEL (항목 레지스터) --> CNT (row · col 개수 레지스터) --> EVAL
+        EVAL: must-repair 결정 → 다음 항목 / pass 끝에 바뀐 것이 없으면 ORD
+        ORD:  남은 spare 수에 맞는 다음 순서, must-repair 뒤 상태 복원 --> SEL
+              (탐색 pass: 덮이지 않은 항목마다 순서의 다음 spare; 끝까지 덮으면 done ok)
+FUSE:   리셋 뒤 / load: READ (fz_rd) --> TAKE (fz_rdata 레지스터) --> DEC (디코드, 표에) x 4
+        program: PGM x 4 (항목 a의 SECDED 워드를 fz_wdata로)
+```
+
+- BIRA는 MBIST 로그 전체(`log_keys`, 항목 16 × 8 bit)와 마지막 영역(bank, 첫 row)을 받는다. col spare는 영역의 첫 row가 16-row 블록 경계일 때만 쓴다.
+- spare 슬롯은 쓴 순서대로 채운다(row 0 → 1, col 0 → 1). 순서 `ord`의 bit t가 1이면 t번째로 쓰는 spare가 row다. 남은 spare 수 L에 대해 bit L 이상이 0이고 1의 개수가 남은 row 수인 순서만 시도한다.
+- repair 표는 데이터패스 리셋에 들어 있다. soft reset도 표를 비우고, 이어서 fuse 로드가 다시 채운다.
+- fuse 포트: `fz_rd`와 `fz_addr` 다음 클럭에 `fz_rdata`. `fz_pgm`은 `fz_wdata`를 OR로 굽는다. SECDED (39,32)는 확장 Hamming이다. 비트 0이 전체 패리티이고, 위치 2^k(1, 2, 4, 8, 16, 32)가 체크 비트, 나머지 32개가 데이터다. 항목은 데이터 `[15:0]`에 들어간다.

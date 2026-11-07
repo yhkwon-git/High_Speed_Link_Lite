@@ -5,7 +5,7 @@
 | 계층 | 담당 | 상태 |
 | --- | --- | --- |
 | 칩 | 호스트 요청 포트와 CSR로 칩 전체를 몰고, 응답을 스코어보드로 확인 | `tb/tb_hsl_smoke.sv` |
-| 채널 | 핀 너머의 DRAM: 데이터 저장, DBI · 리페어 · eye 모델, 배열 고장(SA · TF · CFin · CFid · CFst), 핀에서 프로토콜과 같은 뱅크 타이밍 검사 | `tb/models/dram_channel_behav.sv` |
+| 채널 | 핀 너머의 DRAM: 데이터 저장, DBI · 리페어 · eye 모델, 배열 고장(SA · TF · CFin · CFid · CFst, 16개), spare row · col 저장소(repair 표가 가리키는 접근), 핀에서 프로토콜과 같은 뱅크 타이밍 검사 | `tb/models/dram_channel_behav.sv` |
 | 블록 | 레인 shift, deskew, PRBS, TX 기어, FIFO, DBI | `tb/tb_hsl_blocks.sv` |
 
 컨트롤러(`rtl/mc/`)의 단독 검증(랜덤 회귀, bind 타이밍 체커, 기능 커버리지)은 Mini DRAM Controller 저장소에 있다. 여기서는 칩 안에서 그 경계와 동작을 본다.
@@ -43,8 +43,11 @@
 | T11 | 레인별 eye(고정 · 랜덤)에 대해 읽기 레벨링: eye 시작 · 폭과 중앙 코드 정확, 학습 전 BIST는 eye가 16을 벗어난 레인만 실패, 학습 후 BIST · 트래픽 통과, 닫힌 eye는 실패 표시 |
 | T12 | 이전 in-order MC로 쟀던 WR 16 + RD 16(사이클 출력), 열린 row 읽기 하나의 지연과 그 안의 핀 RD → `rddata_valid`, bank group 두 개에 걸친 읽기 32개, DBI-AC 양방향 + lane 5 stuck-at-1 리페어 트래픽, 채널 모델 오류 0 |
 | T13 | MBIST. 고장 없이 세 알고리즘 PASS(연산 수와 클럭 출력). 배열 고장 24개(SA 2, TF 2, CFin 4, CFid 8, CFst 8; victim 워드 2 · 5의 bit 3, aggressor bit 7) × MATS+ · March X · March C-: 고장마다 검출 여부가 `tb/march_ref.py`의 기대값(13 · 17 · 24)과 같고, 검출되면 첫 실패 주소가 victim 워드, 다른 비트가 bit 3. 4 × 16 영역의 고장 워드 3개가 처음 실패한 순서로 로그에 남고 실패 읽기 7개. DQ 핀 stuck-at-1에서 실패 읽기 192개, 로그 16개와 넘침. 한 엔진이 도는 동안 다른 엔진의 start가 기다렸다가 돌고(두 순서) 둘이 함께 busy인 클럭 0 |
+| T14 | Repair. A: 고장 워드 8개에서 BIRA 할당(row +1 · +6, col 5)과 표 값, soft repair 뒤 재시험 PASS와 spare 접근 수. B: fuse 프로그램 → 표 비움 → 칩 리셋 → fuse 로드가 표를 되살림, 재시험 PASS. C: fuse 워드 1 bit 반전 정정 · 2 bit 반전 항목 버림, 버린 col의 워드가 다시 실패. D: 대각선 5워드와 넘친 로그는 수리 불가. E: greedy로 못 고치는 맵을 고침. F: 랜덤 맵 12개(3–8워드)에서 BIRA 상태와 표가 TB 참조와 같고, 수리 가능하면 재시험 PASS |
 
 블록 테스트 E7(TX 기어), E9(deskew), E11(PRBS seed)은 `tb_hsl_blocks`가 같은 실행 안에서 돈다. 이전 in-order 컨트롤러의 블록 테스트(T2 뱅크 FSM, T3 스케줄러)는 컨트롤러 교체와 함께 지웠고, 번호는 칩 테스트가 이어받았다.
+
+T14의 fuse는 테스트벤치의 OTP 배열(워드 4개, 비트는 0 → 1만, 칩 리셋에도 값 유지)이다. BIRA의 기대값은 같은 규칙을 SV로 다시 짠 `bira_ref` 태스크에서, 수리율 표는 `tb/bira_ref.py`(greedy, spare 순서 탐색, exhaustive 비교)에서 나온다.
 
 T13의 고장은 테스트벤치가 채널 모델의 `flt_*` 표에 계층 참조로 넣고, 매 실행 전에 그 영역을 0으로 지운다(참조 시뮬레이터가 0에서 시작하므로). 기대 검출표는 같은 고장 규칙을 Python으로 다시 짠 참조에서 나온다. RTL이 아니라 모델 규칙에 대한 기대값이라, 모델 규칙이 틀리면 둘이 같이 틀릴 수 있다. 그래서 모델 규칙은 March 문헌의 고장 정의(전이에 걸리는 CFin · CFid, 상태에 걸리는 CFst)를 따라 모델 머리 주석과 참조 docstring 두 곳에 같은 규칙으로 적었다.
 

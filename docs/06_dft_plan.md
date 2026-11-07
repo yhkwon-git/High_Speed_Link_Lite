@@ -9,6 +9,7 @@
 | 리페어 설정 | `CSR_REMAP` | 웨이퍼 테스트나 레인 BIST가 찾은 배드 핀을 기록하는 자리 |
 | 레인 BIST | `CSR_LANE_BIST` | DQ 레인별 에러, 한 레인만 실패했는지, 실패 레인 번호 |
 | MBIST | `CSR_MBIST`, `CSR_MBIST_LOG`, `CSR_MBIST_BITS` | 배열 March 시험의 pass, 실패 읽기 수, 첫 실패 주소와 비트, 실패 워드 로그 16개와 넘침 |
+| Repair | `CSR_BIRA`, `CSR_REPAIR`, `CSR_FUSE` | 수리 가능 여부와 쓴 spare, repair 표 항목, fuse 로드 결과(정정 · 정정 불가 · 버린 항목) |
 | CKE | `pin_cke` | RESET과 그 외를 핀에서 구분 |
 
 카운터는 16'hFFFF에서 멈춘다. 고장이 계속될 때 0으로 돌아와 정상처럼 보이지 않게 하기 위해서다.
@@ -64,6 +65,15 @@ aggressor와 victim은 다른 워드이고, aggressor가 주소 순서로 victim
 - 링크 고장도 MBIST에 실패로 보인다(DQ 핀 stuck-at-1이면 모든 r0 실패). 배열 시험 전에 레인 BIST로 링크를 먼저 확인해야 배열 고장과 구분된다.
 - 다루지 않는 것: 워드 안 비트 사이 coupling, 이웃 패턴 고장, 데이터 보존, 주소 디코더 고장의 분리 진단. checkerboard 배경, 보존 대기 요소, 더 긴 알고리즘(March SS 등)이 필요하다.
 
+## Repair
+
+배열에 spare row 2개와 spare column 2개(col은 16-row 블록 하나에 걸림)가 있다고 두고, base die가 분석 · 기록 · 로드를 맡는다.
+
+- **BIRA** (`hsl_bira`): MBIST 실패 워드 로그로 spare를 고른다. 로그가 넘쳤으면 수리 불가. must-repair(덮이지 않은 실패가 남은 spare col보다 많은 row는 반드시 spare row, 반대도 같음)를 바뀌는 것이 없을 때까지 반복한 뒤, 남은 spare의 순서(최대 16가지)를 차례로 시도한다. 모든 해가 어떤 순서에 해당하므로 해가 있으면 찾는다. greedy 한 번으로는 2 + 2 spare, 5워드 맵에서 63.1%만 고쳤고 순서 탐색은 73.2%(= exhaustive)다(`tb/bira_ref.py`).
+- **soft repair**: BIRA 결과를 repair 표(spare마다 16 bit)에 넣으면 배열이 그 row · col 접근을 spare로 보낸다. 재시험으로 확인한다.
+- **hard repair**: 표를 fuse 워드(SECDED (39,32))로 굽고, 리셋이 풀릴 때마다 디코더로 읽어 표를 채운다. 1 bit 오류는 정정, 2 bit 오류는 그 항목을 버리고 표시한다. 굽지 않은 fuse는 빈 표다.
+- **다루지 않는 것**: subarray별 spare, 비트 단위 fail bitmap, spare 자체의 고장(spare를 쓰기 전에 시험), JEDEC PPR 명령 순서, fuse 프로그램 조건과 읽기 마진.
+
 ## 스캔
 
 - 상태 소자는 플롭만 쓴다.
@@ -78,5 +88,7 @@ aggressor와 victim은 다른 워드이고, aggressor가 주소 순서로 victim
 3. `CSR_LANE_BIST`로 레인 BIST를 돌린다. 한 레인만 실패했으면 그 번호를 `CSR_REMAP`에 쓰고 DRAM 쪽에도 같은 설정을 한 뒤 다시 돌려 PASS를 확인한다.
 4. 그다음 채널 트레이닝을 진행한다.
 5. 링크가 통과한 뒤 `CSR_MBIST`로 배열 영역마다 March C-를 돌리고, 실패하면 `CSR_MBIST_LOG`로 실패 워드를 읽는다.
+6. `CSR_BIRA` start로 spare를 고르고, 수리 가능하면 apply로 표에 넣은 뒤 같은 March C-로 재시험한다.
+7. 재시험이 통과하면 `CSR_FUSE` program으로 fuse에 굽고, 리셋 뒤 `CSR_FUSE`에서 로드 결과(정정 · 버린 항목 0)와 재시험 PASS를 확인한다.
 
-2번은 T8, 3번은 T10, 5번은 T13이 본다. 4번의 아날로그 완료는 TRAIN done 펄스로 테스트가 대신한다.
+2번은 T8, 3번은 T10, 5번은 T13, 6–7번은 T14가 본다. 4번의 아날로그 완료는 TRAIN done 펄스로 테스트가 대신한다.
