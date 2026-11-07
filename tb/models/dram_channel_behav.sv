@@ -156,6 +156,13 @@ module dram_channel_behav (
   integer hz_err;
   integer wdqs_err;
   integer n_act, n_pre, n_prea, n_ref, n_refpb, n_rd, n_wr, n_ap;
+  // A planted bug for the DFD debug case (T16): with bug_refdis, a RD to a
+  // bank within bug_win clocks after that bank's REFpb returns bit 5 flipped.
+  logic   bug_refdis = 1'b0;
+  integer bug_win    = 16;
+  integer n_bug      = 0;
+  integer refpb_cyc [0:BANK_N-1];
+  initial for (int b = 0; b < BANK_N; b++) refpb_cyc[b] = -1000;
 
   // Write path: WRs waiting for their data, two beats per burst.
   logic               wcap_half;
@@ -513,6 +520,10 @@ module dram_channel_behav (
             end
             rq_word[rq_tail % QN] = array_read(int'(cbank), int'(open_row[cbank]), int'(ccol));
             rq_ecc[rq_tail % QN]  = ecc_read(int'(cbank), int'(open_row[cbank]), int'(ccol));
+            if (bug_refdis && (ccyc - refpb_cyc[cbank] <= bug_win)) begin
+              rq_word[rq_tail % QN][5] = ~rq_word[rq_tail % QN][5];
+              n_bug = n_bug + 1;
+            end
             rq_due[rq_tail % QN]  = rcyc + RL_RDQS;
             rq_tail = rq_tail + 1;
             p_at = imax(pre_at[cbank], ccyc + tRTP);
@@ -570,6 +581,7 @@ module dram_channel_behav (
           end
           CMD_REFPB: begin
             n_refpb = n_refpb + 1;
+            refpb_cyc[rbank] = ccyc;
             if (open_v[rbank]) proto($sformatf("REFPB to open bank %0d", rbank));
             if (ccyc < act_at[rbank]) timing("REFPB (tRP / tRFCpb)", int'(rbank), act_at[rbank]);
             if (ccyc < any_at)        timing("tRFC", int'(rbank), any_at);

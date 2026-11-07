@@ -171,6 +171,26 @@ package hsl_pkg;
   localparam logic [7:0] CSR_ECC_CNT  = 8'h4C;
   localparam logic [7:0] CSR_ECC_ADDR = 8'h50;
 
+  // DFD (hsl_dfd): trace buffer, command counters, MISR.
+  // TRACE write:      [0] arm, [3:1] trigger (0 ECC UE, 1 ECC CE, 2 PRBS
+  //                   error, 3 MBIST fail, 4 command to the filter bank,
+  //                   5 manual), [7:4] entries after the trigger, [9:8]
+  //                   filter bank, [10] record only that bank's commands,
+  //                   [11] manual trigger
+  // TRACE read:       [0] recording, [1] triggered, [2] frozen, [3] wrapped,
+  //                   [7:4] next entry, [11:8] trigger entry
+  // TRACE_DATA:       write [3:0] entry to read; read the entry (hsl_dfd)
+  // EVCNT0 read:      [15:0] ACT, [31:16] RD on the pins; a write clears all
+  // EVCNT1 read:      [15:0] WR, [31:16] REFpb
+  // MISR:             write [0] run (0 holds the seed, all ones); read the
+  //                   signature of the read data to the controller
+  localparam int TR_DEPTH = 16;
+  localparam logic [7:0] CSR_TRACE      = 8'h54;
+  localparam logic [7:0] CSR_TRACE_DATA = 8'h58;
+  localparam logic [7:0] CSR_EVCNT0     = 8'h5C;
+  localparam logic [7:0] CSR_EVCNT1     = 8'h60;
+  localparam logic [7:0] CSR_MISR       = 8'h64;
+
   // Read leveling: one delay-line code per DQ lane toward the analog PHY.
   // RDTRAIN write: [0] start, [6:4] lane to read back.
   // RDTRAIN read:  [0] busy, [1] done, [2] every lane found an eye,

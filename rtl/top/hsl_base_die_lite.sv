@@ -142,6 +142,13 @@ module hsl_base_die_lite (
   logic ecc_inj_pend, ecc_st_busy, ecc_st_done, ecc_st_pass, ecc_log_v, ecc_log_ue;
   logic [15:0] ecc_ce_cnt, ecc_ue_cnt;
   logic [hsl_pkg::ADDR_W-1:0] ecc_log_addr;
+  logic tr_arm, tr_flt_en, tr_man, ev_clear, misr_en;
+  logic tr_recording, tr_triggered, tr_frozen, tr_wrapped;
+  logic [2:0] tr_trig_sel;
+  logic [3:0] tr_post, tr_sel, tr_wp, tr_trig_pos;
+  logic [1:0] tr_flt_bank;
+  logic [31:0] tr_entry, misr;
+  logic [15:0] ev_act, ev_rd, ev_wr, ev_refpb;
   logic [7:0] lb_lane_err;
   logic [4:0] lb_err_bursts;
   logic rt_start, rt_bist_start, rt_busy, rt_done, rt_ok;
@@ -246,7 +253,28 @@ module hsl_base_die_lite (
     .ecc_log_v    (ecc_log_v),
     .ecc_log_ue   (ecc_log_ue),
     .ecc_log_syn  (ecc_log_syn),
-    .ecc_log_addr (ecc_log_addr)
+    .ecc_log_addr (ecc_log_addr),
+    .tr_arm       (tr_arm),
+    .tr_trig_sel  (tr_trig_sel),
+    .tr_post      (tr_post),
+    .tr_flt_bank  (tr_flt_bank),
+    .tr_flt_en    (tr_flt_en),
+    .tr_man       (tr_man),
+    .tr_sel       (tr_sel),
+    .ev_clear     (ev_clear),
+    .misr_en      (misr_en),
+    .tr_recording (tr_recording),
+    .tr_triggered (tr_triggered),
+    .tr_frozen    (tr_frozen),
+    .tr_wrapped   (tr_wrapped),
+    .tr_wp        (tr_wp),
+    .tr_trig_pos  (tr_trig_pos),
+    .tr_entry     (tr_entry),
+    .ev_act       (ev_act),
+    .ev_rd        (ev_rd),
+    .ev_wr        (ev_wr),
+    .ev_refpb     (ev_refpb),
+    .misr         (misr)
   );
 
   hsl_rd_train u_rd_train (
@@ -441,6 +469,40 @@ module hsl_base_die_lite (
     .ecc_log_ue   (ecc_log_ue),
     .ecc_log_syn  (ecc_log_syn),
     .ecc_log_addr (ecc_log_addr)
+  );
+  // DFD: trace of the CA pins and events, command counters, read data MISR.
+  hsl_dfd #(.DEPTH(hsl_pkg::TR_DEPTH)) u_dfd (
+    .clk          (clk),
+    .rst_n        (rst_logic_n),
+    .rca          (pin_rca),
+    .cca          (pin_cca),
+    .rd_valid     (dfi_rddata_valid),
+    .rd_data      (dfi_rddata),
+    .ecc_ce_cnt   (ecc_ce_cnt),
+    .ecc_ue_cnt   (ecc_ue_cnt),
+    .prbs_err_cnt (err_cnt),
+    .mb_fail_cnt  (mb_fail_cnt),
+    .arm          (tr_arm),
+    .trig_sel     (tr_trig_sel),
+    .post         (tr_post),
+    .flt_bank     (tr_flt_bank),
+    .flt_en       (tr_flt_en),
+    .man_trig     (tr_man),
+    .rd_sel       (tr_sel),
+    .cnt_clear    (ev_clear),
+    .misr_en      (misr_en),
+    .recording    (tr_recording),
+    .triggered    (tr_triggered),
+    .frozen       (tr_frozen),
+    .wrapped      (tr_wrapped),
+    .wp           (tr_wp),
+    .trig_pos     (tr_trig_pos),
+    .rd_entry     (tr_entry),
+    .n_act        (ev_act),
+    .n_rd         (ev_rd),
+    .n_wr         (ev_wr),
+    .n_refpb      (ev_refpb),
+    .misr         (misr)
   );
 endmodule
 

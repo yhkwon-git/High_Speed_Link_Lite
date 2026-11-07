@@ -18,6 +18,7 @@
 // [6:4] of the last write (layouts in hsl_pkg). BIRA, REPAIR and FUSE run the
 // repair analysis, read back the repair table and program / load the fuses.
 // ECC, ECC_INJ, ECC_CNT and ECC_ADDR control and observe the data ECC.
+// TRACE, TRACE_DATA, EVCNT0/1 and MISR drive the DFD block (hsl_dfd).
 // Map: docs/03_microarchitecture.md
 // -----------------------------------------------------------------------------
 `default_nettype none
@@ -68,6 +69,15 @@ module hsl_csr (
   output logic [6:0]  ecc_inj_cmask,
   output logic        ecc_st_start,
   output logic        ecc_clear,
+  output logic        tr_arm,
+  output logic [2:0]  tr_trig_sel,
+  output logic [3:0]  tr_post,
+  output logic [1:0]  tr_flt_bank,
+  output logic        tr_flt_en,
+  output logic        tr_man,
+  output logic [3:0]  tr_sel,
+  output logic        ev_clear,
+  output logic        misr_en,
 
   input  wire  [3:0]  train_state,
   input  wire         train_done,
@@ -112,7 +122,19 @@ module hsl_csr (
   input  wire         ecc_log_v,
   input  wire         ecc_log_ue,
   input  wire  [6:0]  ecc_log_syn,
-  input  wire  [hsl_pkg::ADDR_W-1:0] ecc_log_addr
+  input  wire  [hsl_pkg::ADDR_W-1:0] ecc_log_addr,
+  input  wire         tr_recording,
+  input  wire         tr_triggered,
+  input  wire         tr_frozen,
+  input  wire         tr_wrapped,
+  input  wire  [3:0]  tr_wp,
+  input  wire  [3:0]  tr_trig_pos,
+  input  wire  [31:0] tr_entry,
+  input  wire  [15:0] ev_act,
+  input  wire  [15:0] ev_rd,
+  input  wire  [15:0] ev_wr,
+  input  wire  [15:0] ev_refpb,
+  input  wire  [31:0] misr
 );
   import hsl_pkg::*;
 
@@ -163,6 +185,15 @@ module hsl_csr (
       ecc_inj_cmask <= '0;
       ecc_st_start  <= 1'b0;
       ecc_clear     <= 1'b0;
+      tr_arm        <= 1'b0;
+      tr_trig_sel   <= '0;
+      tr_post       <= '0;
+      tr_flt_bank   <= '0;
+      tr_flt_en     <= 1'b0;
+      tr_man        <= 1'b0;
+      tr_sel        <= '0;
+      ev_clear      <= 1'b0;
+      misr_en       <= 1'b0;
     end else begin
       train_start <= 1'b0;
       zq_done     <= 1'b0;
@@ -181,6 +212,9 @@ module hsl_csr (
       ecc_inj_arm  <= 1'b0;
       ecc_st_start <= 1'b0;
       ecc_clear    <= 1'b0;
+      tr_arm       <= 1'b0;
+      tr_man       <= 1'b0;
+      ev_clear     <= 1'b0;
       if (cfg_we) begin
         case (cfg_addr)
           CSR_CTRL: ctrl <= cfg_wdata[7:0] & 8'hDF;
@@ -233,6 +267,17 @@ module hsl_csr (
             ecc_inj_cmask <= cfg_wdata[14:8];
           end
           CSR_ECC_INJ: ecc_inj_dmask <= cfg_wdata;
+          CSR_TRACE: begin
+            tr_arm      <= cfg_wdata[0];
+            tr_trig_sel <= cfg_wdata[3:1];
+            tr_post     <= cfg_wdata[7:4];
+            tr_flt_bank <= cfg_wdata[9:8];
+            tr_flt_en   <= cfg_wdata[10];
+            tr_man      <= cfg_wdata[11];
+          end
+          CSR_TRACE_DATA: tr_sel <= cfg_wdata[3:0];
+          CSR_EVCNT0:     ev_clear <= 1'b1;
+          CSR_MISR:       misr_en <= cfg_wdata[0];
           default: ;
         endcase
       end
@@ -310,6 +355,12 @@ module hsl_csr (
       CSR_ECC_INJ:   rdata_d = ecc_inj_dmask;
       CSR_ECC_CNT:   rdata_d = {ecc_ue_cnt, ecc_ce_cnt};
       CSR_ECC_ADDR:  rdata_d = {18'h0, ecc_log_addr};
+      CSR_TRACE:     rdata_d = {20'h0, tr_trig_pos, tr_wp, tr_wrapped, tr_frozen, tr_triggered,
+                                tr_recording};
+      CSR_TRACE_DATA: rdata_d = tr_entry;
+      CSR_EVCNT0:    rdata_d = {ev_rd, ev_act};
+      CSR_EVCNT1:    rdata_d = {ev_refpb, ev_wr};
+      CSR_MISR:      rdata_d = misr;
       default:       rdata_d = 32'h0;
     endcase
   end

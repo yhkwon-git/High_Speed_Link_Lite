@@ -24,6 +24,8 @@
 //   T15    ECC: decoder self-test (and a broken decoder), injected 1-bit data
 //          and check-bit errors corrected and logged, a 2-bit error detected,
 //          a stuck array bit corrected, ECC off
+//   T16    DFD: command counters, MISR, a manual-trigger trace, and a debug
+//          case (a bug planted in the channel model found with the trace)
 // Every host response is checked against a reference memory (scoreboard).
 // Controller half-period is CTRL_PERIOD_PS/2 = 625 ps (800 MHz).
 `timescale 1ns/100fs
@@ -2521,6 +2523,239 @@ module tb_hsl_smoke;
     end
   endtask
 
+  // ---------------------------------------------------------------------------
+  // T16: DFD. Command counters against the channel model, the read-data MISR
+  // against a TB reference, a manual-trigger trace (pre/post and freeze), and
+  // a debug case: a bug planted in the channel model (a RD shortly after a
+  // REFpb to the same bank returns one bit flipped) shows up only as ECC
+  // corrected errors; the trace, triggered on them and filtered to the
+  // failing bank, shows the REFpb right before the reads.
+  // ---------------------------------------------------------------------------
+  function automatic logic [31:0] misr_step(input logic [31:0] s, input logic [31:0] d);
+    misr_step = {s[30:0], 1'b0} ^ (s[31] ? 32'h0040_0007 : 32'h0) ^ d;
+  endfunction
+
+  task automatic t16_wait_frozen(output logic [31:0] v, input integer limit);
+    integer guard;
+    begin
+      guard = 0;
+      v = '0;
+      while ((v[2] !== 1'b1) && (guard < limit)) begin
+        csr_read(CSR_TRACE, v);
+        guard = guard + 1;
+      end
+    end
+  endtask
+
+  // Read the 16 entries oldest first.
+  task automatic t16_dump(input logic [31:0] st, output logic [31:0] ent [0:15], output integer tpos);
+    integer k;
+    integer first;
+    logic [31:0] v;
+    begin
+      first = st[3] ? int'(st[7:4]) : 0;
+      tpos = -1;
+      for (k = 0; k < 16; k = k + 1) begin
+        csr_write(CSR_TRACE_DATA, 32'((first + k) % 16));
+        csr_read(CSR_TRACE_DATA, v);
+        ent[k] = v;
+        if (((first + k) % 16) == int'(st[11:8])) tpos = k;
+      end
+    end
+  endtask
+
+  task automatic run_t16();
+    integer      t16bad;
+    integer      k;
+    integer      n;
+    integer      cap;
+    integer      lcg;
+    integer      a0;
+    integer      r0;
+    integer      w0;
+    integer      f0;
+    integer      tpos;
+    integer      nent;
+    integer      i_ref;
+    integer      i_rd;
+    integer      gap;
+    integer      ok_caps;
+    integer      seen;
+    logic [31:0] v;
+    logic [31:0] st;
+    logic [31:0] e0;
+    logic [31:0] e1;
+    logic [31:0] exp_m;
+    logic [31:0] ent [0:15];
+    logic [1:0]  bb;
+    logic [ADDR_W-1:0] a;
+    string       ln;
+    begin
+      t16bad = 0;
+      soft_reset();
+      arm_mission(32'h0);
+
+      // A: counters and MISR.
+      for (k = 0; k < 16; k = k + 1) host_write(host_addr(2'd1, 8'h30, 4'(k)), 32'h5150_0000 ^ 32'(k * 7919));
+      host_idle();
+      csr_write(CSR_EVCNT0, 32'h0);
+      csr_write(CSR_MISR, 32'h1);
+      a0 = u_dram.n_act;
+      r0 = u_dram.n_rd;
+      w0 = u_dram.n_wr;
+      f0 = u_dram.n_refpb;
+      for (k = 0; k < 16; k = k + 1) host_write(host_addr(2'd1, 8'h31, 4'(k)), 32'hA0A0_0000 + 32'(k));
+      host_idle();
+      for (k = 0; k < 16; k = k + 1) host_read(host_addr(2'd1, 8'h30, 4'(k)));
+      host_idle();
+      csr_read(CSR_EVCNT0, e0);
+      csr_read(CSR_EVCNT1, e1);
+      csr_read(CSR_MISR, v);
+      exp_m = '1;
+      for (k = 0; k < 16; k = k + 1) exp_m = misr_step(exp_m, 32'h5150_0000 ^ 32'(k * 7919));
+      if ((int'(e0[15:0]) != u_dram.n_act - a0) || (int'(e0[31:16]) != u_dram.n_rd - r0) ||
+          (int'(e1[15:0]) != u_dram.n_wr - w0) ||
+          (int'(e1[31:16]) - (u_dram.n_refpb - f0) > 1) || (int'(e1[31:16]) - (u_dram.n_refpb - f0) < -1) ||
+          (v !== exp_m)) begin
+        $display("[T16] counters %h %h (model ACT %0d RD %0d WR %0d REFpb %0d), MISR %h expected %h",
+                 e0, e1, u_dram.n_act - a0, u_dram.n_rd - r0, u_dram.n_wr - w0, u_dram.n_refpb - f0, v, exp_m);
+        t16bad = t16bad + 1;
+      end
+      $display("[T16] counters: ACT %0d RD %0d WR %0d REFpb %0d, as the channel model counted; MISR of 16 reads %h = reference",
+               e0[15:0], e0[31:16], e1[15:0], e1[31:16], v);
+      csr_write(CSR_MISR, 32'h0);
+
+      // B: manual trigger, 3 entries after it, then frozen.
+      csr_write(CSR_TRACE, 32'h1 | (32'd5 << 1) | (32'd3 << 4));
+      for (k = 0; k < 16; k = k + 1) host_read(host_addr(2'd1, 8'h30, 4'(k)));
+      host_idle();
+      csr_write(CSR_TRACE, (32'd5 << 1) | (32'd3 << 4) | (32'h1 << 11));
+      for (k = 8; k < 16; k = k + 1) host_read(host_addr(2'd1, 8'h30, 4'(k)));
+      host_idle();
+      t16_wait_frozen(st, 100);
+      t16_dump(st, ent, tpos);
+      n = 0;
+      for (k = 0; k < 16; k = k + 1) n = n + int'(ent[k][0]);
+      nent = st[3] ? 16 : int'(st[7:4]);
+      if ((st[2:1] !== 2'b11) || (n != 1) || (tpos < 0) || (nent - 1 - tpos != 3)) begin
+        $display("[T16] manual trigger: status %h, trigger marks %0d at %0d of %0d", st, n, tpos, nent);
+        t16bad = t16bad + 1;
+      end
+      for (k = 1; k < nent; k = k + 1) begin
+        if (((ent[k][31:24] - ent[k-1][31:24]) & 8'hFF) == 8'h00) begin
+          $display("[T16] manual trigger: entries %0d and %0d share a timestamp", k - 1, k);
+          t16bad = t16bad + 1;
+        end
+      end
+      $display("[T16] manual trigger: frozen with the trigger at entry %0d of %0d and 3 after it", tpos, nent);
+
+      // C: debug case. The planted bug is invisible to the host with ECC on
+      // (reads come back corrected); the corrected-error count is the symptom.
+      u_dram.bug_refdis = 1'b1;
+      csr_write(CSR_ECC, 32'h9);
+      csr_write(CSR_ECC, 32'h1);
+      for (k = 0; k < 64; k = k + 1) host_write(host_addr(2'(k / 16), 8'h60, 4'(k % 16)), 32'hD0D0_0000 + 32'(k));
+      host_idle();
+      lcg = 32'h0BAD_5EED;
+      for (k = 0; k < 200; k = k + 1) begin
+        lcg = lcg * 1103515245 + 12345;
+        host_read(host_addr(2'((lcg >>> 16) & 3), 8'h60, 4'((lcg >>> 20) & 15)));
+        if (((lcg >>> 24) & 3) == 0) wait_cycles(int'((lcg >>> 26) & 7));
+      end
+      host_idle();
+      csr_read(CSR_ECC_CNT, e0);
+      csr_read(CSR_ECC_ADDR, v);
+      bb = v[5:4] ^ v[7:6];
+      $display("[T16] debug: symptom: %0d corrected reads in 200 (host data all correct), first at %h = bank %0d",
+               e0[15:0], v[13:0], bb);
+      if ((e0[15:0] == 16'h0) || (e0[31:16] != 16'h0)) begin
+        $display("[T16] debug: no symptom");
+        t16bad = t16bad + 1;
+      end
+      // Narrow it down: traffic to bank bb only, so every corrected error is a
+      // bank bb read. Capture three times: trigger on a corrected error, bank
+      // bb's commands only.
+      ok_caps = 0;
+      for (cap = 0; cap < 3; cap = cap + 1) begin
+        csr_write(CSR_TRACE, 32'h1 | (32'd1 << 1) | (32'd1 << 4) | (32'(bb) << 8) | (32'h1 << 10));
+        k = 0;
+        st = '0;
+        while ((st[2] !== 1'b1) && (k < 400)) begin
+          lcg = lcg * 1103515245 + 12345;
+          host_read(host_addr(bb, 8'h60, 4'((lcg >>> 20) & 15)));
+          if ((k % 8) == 7) csr_read(CSR_TRACE, st);
+          k = k + 1;
+        end
+        host_idle();
+        t16_wait_frozen(st, 10);
+        t16_dump(st, ent, tpos);
+        nent = st[3] ? 16 : int'(st[7:4]);
+        // Last REFpb to bank bb before the trigger, and a RD to bb after it.
+        i_ref = -1;
+        i_rd  = -1;
+        for (k = 0; k <= tpos; k = k + 1) begin
+          if ((ent[k][23:21] == 3'd7) && (ent[k][20:19] == bb)) i_ref = k;
+        end
+        if (i_ref >= 0) begin
+          for (k = i_ref + 1; k <= tpos; k = k + 1) begin
+            if ((ent[k][10:8] == 3'd2) && (ent[k][7:6] == bb) && (i_rd < 0)) i_rd = k;
+          end
+        end
+        if (i_rd >= 0) begin
+          v   = {24'h0, 8'(ent[i_rd][31:24] - ent[i_ref][31:24])};
+          gap = int'(v);
+        end else begin
+          gap = -1;
+        end
+        if (cap == 0) begin
+          for (k = 0; k < nent; k = k + 1) begin
+            ln = $sformatf("[T16]   t=%3d", ent[k][31:24]);
+            if (ent[k][23:21] == 3'd7) ln = {ln, $sformatf("  REFpb b%0d", ent[k][20:19])};
+            if (ent[k][23:21] == 3'd1) ln = {ln, $sformatf("  ACT b%0d r%h", ent[k][20:19], ent[k][18:11])};
+            if (ent[k][23:21] == 3'd4) ln = {ln, $sformatf("  PRE b%0d", ent[k][20:19])};
+            if (ent[k][10:8] == 3'd2)  ln = {ln, $sformatf("  RD b%0d", ent[k][7:6])};
+            if (ent[k][10:8] == 3'd3)  ln = {ln, $sformatf("  WR b%0d", ent[k][7:6])};
+            if (ent[k][5])             ln = {ln, "  data"};
+            if (ent[k][4])             ln = {ln, "  ECC-CE"};
+            if (ent[k][0])             ln = {ln, "  <- trigger"};
+            $display("%s", ln);
+          end
+        end
+        $display("[T16] debug capture %0d: REFpb b%0d, then the first RD b%0d %0d clocks later; corrected error %0d clocks after that RD",
+                 cap, bb, bb, gap, (i_rd >= 0) ? int'(8'(ent[tpos][31:24] - ent[i_rd][31:24])) : -1);
+        if ((st[2:1] == 2'b11) && (i_ref >= 0) && (i_rd >= 0) && (gap <= 16)) ok_caps = ok_caps + 1;
+      end
+      if (ok_caps != 3) begin
+        $display("[T16] debug: %0d of 3 captures show a REFpb within 16 clocks before the reads", ok_caps);
+        t16bad = t16bad + 1;
+      end
+      // The fix: without the bug the same traffic has no corrected errors.
+      u_dram.bug_refdis = 1'b0;
+      csr_write(CSR_ECC, 32'h9);
+      csr_write(CSR_ECC, 32'h1);
+      for (k = 0; k < 200; k = k + 1) begin
+        lcg = lcg * 1103515245 + 12345;
+        host_read(host_addr(2'((lcg >>> 16) & 3), 8'h60, 4'((lcg >>> 20) & 15)));
+      end
+      host_idle();
+      csr_read(CSR_ECC_CNT, e0);
+      if (e0 !== 32'h0) begin
+        $display("[T16] debug: errors without the bug: %h", e0);
+        t16bad = t16bad + 1;
+      end
+      $display("[T16] debug: 3 of 3 captures put a REFpb to bank %0d within 16 clocks before the failing reads; without the planted bug 200 reads have 0 errors",
+               bb);
+      csr_write(CSR_ECC, 32'h8);
+      csr_write(CSR_ECC, 32'h0);
+
+      if (t16bad == 0) begin
+        $display("[T16] PASS");
+      end else begin
+        errors = errors + t16bad;
+      end
+    end
+  endtask
+
   initial begin
     errors = 0;
     // block_errors is driven by the u_blocks output port only.
@@ -2576,6 +2811,7 @@ module tb_hsl_smoke;
     run_t13();
     run_t14();
     run_t15();
+    run_t16();
 
     if (sb_err != 0) begin
       $display("[SB] %0d read mismatches over the run", sb_err);

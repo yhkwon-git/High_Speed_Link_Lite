@@ -31,6 +31,7 @@ rtl/dft/hsl_secded_enc.sv
 rtl/dft/hsl_secded_dec.sv
 rtl/dft/hsl_bira.sv
 rtl/dft/hsl_repair.sv
+rtl/dft/hsl_dfd.sv
 rtl/dft/hsl_dft_top.sv
 rtl/top/hsl_base_die_lite.sv
 tb/models/dram_channel_behav.sv
