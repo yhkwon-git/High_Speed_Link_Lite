@@ -8,12 +8,13 @@ rtl/mc/hsl_scheduler.sv
 rtl/mc/hsl_mc_top.sv
 rtl/phy/hsl_dbi.sv
 rtl/phy/hsl_lane_shift.sv
-rtl/phy/hsl_gearbox.sv
+rtl/phy/hsl_tx_gear.sv
 rtl/phy/hsl_deskew.sv
 rtl/phy/hsl_cdc_fifo.sv
 rtl/phy/hsl_phy_clk.sv
 rtl/phy/hsl_phy_tx.sv
 rtl/phy/hsl_phy_rx.sv
+rtl/phy/hsl_phy_mis.sv
 rtl/phy/hsl_phy_top.sv
 rtl/phy/hsl_rd_train.sv
 rtl/dft/hsl_prbs.sv

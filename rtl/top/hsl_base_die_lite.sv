@@ -8,10 +8,10 @@
 //   CSR resets from rst_sync_n only
 //   every other block resets from rst_sync_n & ~soft_rst
 //
-// Live after E12: CSR, training FSM, reset tree, queue, scheduler, bank FSMs,
-// phy_bypass framer to the channel model, DBI, lane repair, PRBS compare.
-// Tied off in the chip: gearbox din_valid, FIFO wr_en/rd_en, deskew output.
-// Those blocks are exercised by their own instances in tb_hsl_blocks.
+// Live: CSR, training FSM, reset tree, queue, scheduler, bank FSMs, the
+// phy_bypass framer and the mission datapath (CA pins, TX gear, RDQS capture,
+// Gray FIFO) to the channel model, DBI, lane repair, lane BIST, read
+// leveling, PRBS compare. Tied off in the chip: deskew output (block test).
 //
 // Read leveling (hsl_rd_train) sweeps the per-lane delay codes on rx_dly_code,
 // which go to the analog delay lines outside this block, and uses the lane
@@ -52,13 +52,23 @@ module hsl_base_die_lite (
   input  wire  [hsl_pkg::PIN_W-1:0]      pin_dq_i,
   input  wire                            pin_dqs_i,
 
+  // Mission datapath: row / column CA, PHY beats with WDQS, RDQS capture.
+  output logic [hsl_pkg::RCA_W-1:0]      pin_rca,
+  output logic [hsl_pkg::CCA_W-1:0]      pin_cca,
+  output logic [hsl_pkg::BEAT_W-1:0]     pin_tx_beat,
+  output logic [hsl_pkg::DDR_BITS-1:0]   pin_tx_dqs,
+  output logic                           pin_tx_dv,
+  input  wire                            pin_rdqs,
+  input  wire  [hsl_pkg::BEAT_W-1:0]     pin_rx_beat,
+  input  wire                            pin_rx_dv,
+
   // One read delay-line code per DQ lane, to the analog PHY.
   output logic [hsl_pkg::DQ_W*hsl_pkg::RX_DLY_W-1:0] rx_dly_code
 );
   logic rst_sync_n;
   logic rst_logic_n;
 
-  logic soft_rst, train_bypass, loopback, prbs_en, dbi_en, dbi_ac, phy_bypass;
+  logic soft_rst, train_bypass, loopback, prbs_en, dbi_en, dbi_ac, phy_bypass, phy_en;
   logic train_start, zq_done, wrlvl_done, rdlvl_done, deskew_done;
   logic repair_en, err_clear;
   logic [hsl_pkg::DATA_W-1:0] prbs_data;
@@ -113,6 +123,7 @@ module hsl_base_die_lite (
     .dbi_en       (dbi_en),
     .dbi_ac       (dbi_ac),
     .phy_bypass   (phy_bypass),
+    .phy_en       (phy_en),
     .train_start  (train_start),
     .zq_done      (zq_done),
     .wrlvl_done   (wrlvl_done),
@@ -242,6 +253,7 @@ module hsl_base_die_lite (
     .dbi_en      (dbi_en),
     .dbi_ac      (dbi_ac),
     .phy_bypass  (phy_bypass),
+    .phy_en      (phy_en),
     .repair_en   (repair_en),
     .repair_lane (repair_lane),
     .loopback    (loopback),
@@ -265,7 +277,15 @@ module hsl_base_die_lite (
     .pin_dq_oe   (pin_dq_oe),
     .pin_dqs_o   (pin_dqs_o),
     .pin_dq_i    (pin_dq_i),
-    .pin_dqs_i   (pin_dqs_i)
+    .pin_dqs_i   (pin_dqs_i),
+    .pin_rca     (pin_rca),
+    .pin_cca     (pin_cca),
+    .pin_tx_beat (pin_tx_beat),
+    .pin_tx_dqs  (pin_tx_dqs),
+    .pin_tx_dv   (pin_tx_dv),
+    .pin_rdqs    (pin_rdqs),
+    .pin_rx_beat (pin_rx_beat),
+    .pin_rx_dv   (pin_rx_dv)
   );
 endmodule
 

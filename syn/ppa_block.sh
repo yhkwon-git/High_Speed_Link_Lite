@@ -67,9 +67,10 @@ sta -no_splash -exit "$OUT/sta.tcl" > "$OUT/sta.log" 2>&1
 
 area=$(grep -m1 "Chip area" "$OUT/stat.txt" | awk '{print $NF}')
 cells=$(grep -m1 "Number of cells" "$OUT/stat.txt" | awk '{print $NF}')
-delay=$(grep -m1 "data arrival time" "$OUT/sta.log" | awk '{print $1}')
-from=$(grep -m1 "^Startpoint" "$OUT/sta.log" | awk '{print $2}')
-to=$(grep -m1 "^Endpoint" "$OUT/sta.log" | awk '{print $2}')
+# A block whose clocks are not on a clk port has no timed path here: "-".
+delay=$( (grep -m1 "data arrival time" "$OUT/sta.log" || echo "-") | awk '{print $1}')
+from=$( (grep -m1 "^Startpoint" "$OUT/sta.log" || echo "x -") | awk '{print $2}')
+to=$( (grep -m1 "^Endpoint" "$OUT/sta.log" || echo "x -") | awk '{print $2}')
 ffs=$( (grep -E '^ +DFF[A-Z]*_X[0-9]+ ' "$OUT/stat.txt" || true) | awk '{s += $2} END {print s + 0}')
 echo "top,params,area_um2,cells,ff,delay_ns,path" > "$OUT/ppa.csv"
 echo "$TOP,${PARAMS:-},$area,$cells,$ffs,$delay,$from -> $to" >> "$OUT/ppa.csv"

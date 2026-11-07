@@ -33,6 +33,22 @@ package hsl_pkg;
   localparam int DBI_LSB = DQ_W;
   localparam int RED_LSB = DQ_W + DBI_W;
 
+  // Mission datapath (CTRL.phy_en, phy_bypass off). Commands leave on two CA
+  // buses at the controller clock; data leaves as PHY beats of DDR_BITS UI.
+  //   pin_rca = {rcmd[1:0], bank, row}   row bus: ACT, PRE
+  //   pin_cca = {ccmd[1:0], bank, col}   column bus: RD, WR
+  //   beat    = DDR_BITS symbols of PIN_W pins, UI 0 in the low bits
+  localparam int RCA_W = 2 + BANK_W + ROW_W;  // 12
+  localparam int CCA_W = 2 + BANK_W + COL_W;  // 8
+  localparam int BEAT_W = DDR_BITS * PIN_W;   // 20
+  localparam int WORD_PW = BL * PIN_W;        // 40, one burst on the pins
+  localparam logic [1:0] RCMD_NOP = 2'd0;
+  localparam logic [1:0] RCMD_ACT = 2'd1;
+  localparam logic [1:0] RCMD_PRE = 2'd2;
+  localparam logic [1:0] CCMD_NOP = 2'd0;
+  localparam logic [1:0] CCMD_RD  = 2'd1;
+  localparam logic [1:0] CCMD_WR  = 2'd2;
+
   // Burst layout is beat-major. Beat 0 is the first UI on the pin.
   //   beat b occupies [b*DQ_W +: DQ_W], and bit i inside a beat is DQi.
   // DBI flag [b] belongs to that beat. See docs/03_microarchitecture.md.
@@ -78,6 +94,7 @@ package hsl_pkg;
   localparam int CTRL_DBI_EN       = 4;
   localparam int CTRL_PHY_BYPASS   = 5;
   localparam int CTRL_DBI_AC       = 6; // 0: DC rule, 1: AC rule
+  localparam int CTRL_PHY_EN       = 7; // mission datapath (CA pins, DDR beats)
 
   localparam int TRAIN_START  = 0;
   localparam int TRAIN_ZQ     = 1;

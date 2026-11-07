@@ -1,4 +1,4 @@
-# HSL Lite constraints after E7/E8.
+# HSL Lite constraints: controller clock, 2x PHY clock, forwarded CK, RDQS.
 # Periods match docs/02_architecture.md, hsl_pkg, and docs/e12_clocks.md.
 # Not an HBM pin-timing deck, and not signed off in a timing tool.
 
@@ -8,13 +8,27 @@ set phy_period  0.625
 create_clock -name clk -period $ctrl_period [get_ports clk]
 
 # Behavioral 2x in hsl_phy_clk. The analog PLL is outside this repo.
-# Source is the controller port. multiply_by 2 => 0.625 ns.
+# Source is the controller port. multiply_by 2 => 0.625 ns, rising edges on
+# every controller edge (E0) and half a period later (E1). The TX gear takes
+# controller-clock data on E1, so clk -> clk_phy is a half-period path.
 create_generated_clock -name clk_phy \
   -source [get_ports clk] \
   -multiply_by 2 \
   [get_pins u_phy/u_phy_clk/clk_phy]
 
-# pin_ck is tied low. Do not declare a generated clock on it.
+# CK to the DRAM: clk_phy through the clock gate (ck_en taken on the falling
+# PHY edge), forwarded on pin_ck in mission mode.
+create_generated_clock -name ck_out \
+  -source [get_pins u_phy/u_phy_clk/clk_phy] \
+  -divide_by 1 \
+  [get_ports pin_ck]
+
+# RDQS from the DRAM: CK plus tDQSCK, so same period with an unknown phase
+# against clk_phy. Read beats are captured on it and leave its domain only
+# through the Gray FIFO in hsl_phy_mis; those paths are bounded at the end of
+# this file. No asynchronous clock group: it would turn them into false paths,
+# which take precedence over set_max_delay.
+create_clock -name rdqs -period $phy_period [get_ports pin_rdqs]
 
 # Raw reset is asynchronously asserted. Deassert is synchronized in hsl_rst_sync.
 # A blanket false path skips recovery/removal on that synchronizer.
@@ -42,25 +56,45 @@ set_output_delay -clock clk 0.5 [get_ports {
   rsp_valid
   rsp_rdata
   rsp_err
-  pin_ck
   pin_cke
   pin_ca
   pin_dq_o
   pin_dq_oe
   pin_dqs_o
+  pin_rca
+  pin_cca
+  rx_dly_code
 }]
 
-# Gray-pointer crossings in hsl_cdc_fifo. The crossing is the source-domain
-# Gray flop -> first synchronizer flop. *_s1 -> *_s2 is an ordinary path inside
-# one clock and needs no exception.
-# Bound each crossing to the faster period so the bits of one Gray step arrive
-# within one period of each other. These paths are not false paths.
-#   wgray (clk_phy) -> wptr_g_s1 (clk)
-#   rgray (clk)     -> rptr_g_s1 (clk_phy)
+# Mission beats leave on clk_phy toward the analog serializer, and read beats
+# arrive with RDQS. 40% of the PHY period on each side.
+set_output_delay -clock clk_phy 0.25 [get_ports {
+  pin_tx_beat
+  pin_tx_dqs
+  pin_tx_dv
+}]
+set_input_delay -clock rdqs 0.25 [get_ports {
+  pin_rx_beat
+  pin_rx_dv
+}]
+
+# Read FIFO crossings (hsl_phy_mis/u_rx_fifo), RDQS <-> controller clock.
+# Gray pointers: source-domain Gray flop -> first synchronizer flop, bounded
+# to the faster period so the bits of one Gray step arrive within one period
+# of each other. Not false paths.
+#   wgray (rdqs) -> wptr_g_s1 (clk)
+#   rgray (clk)  -> rptr_g_s1 (rdqs)
 set_max_delay $phy_period \
-  -from [get_cells u_phy/u_fifo/wgray*] \
-  -to   [get_cells u_phy/u_fifo/wptr_g_s1*]
+  -from [get_cells u_phy/u_mis/u_rx_fifo/wgray*] \
+  -to   [get_cells u_phy/u_mis/u_rx_fifo/wptr_g_s1*]
 
 set_max_delay $phy_period \
-  -from [get_cells u_phy/u_fifo/rgray*] \
-  -to   [get_cells u_phy/u_fifo/rptr_g_s1*]
+  -from [get_cells u_phy/u_mis/u_rx_fifo/rgray*] \
+  -to   [get_cells u_phy/u_mis/u_rx_fifo/rptr_g_s1*]
+
+# FIFO data: written on RDQS, read in the controller clock only after the
+# write pointer has crossed two synchronizer flops, so one controller period
+# is a safe bound.
+set_max_delay $ctrl_period \
+  -from [get_cells u_phy/u_mis/u_rx_fifo/mem*] \
+  -to   [get_clocks clk]

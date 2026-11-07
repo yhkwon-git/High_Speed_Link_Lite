@@ -397,39 +397,46 @@ module tb_hsl_blocks (
     end
   endtask
 
+  // E7: hsl_tx_gear, one word per controller clock as two PHY beats, low
+  // half first. Two words on consecutive controller clocks give four beats on
+  // consecutive PHY clocks. The two clocks here are free-running, so E1 is
+  // the first PHY edge after a controller edge.
   logic gclk_c;
   logic gclk_p;
   logic grst;
   logic [31:0] gdin;
   logic gvalid;
-  logic gready;
   logic [15:0] gbeat;
   logic gbeat_v;
-  logic [15:0] ggot [0:1];
+  logic [15:0] ggot [0:3];
+  integer gat [0:3];
   integer gcount;
+  integer gcyc;
 
-  hsl_gearbox u_gear (
-    .clk_ctrl(gclk_c),
-    .clk_phy(gclk_p),
-    .rst_n(grst),
-    .din_ctrl(gdin),
-    .din_valid(gvalid),
-    .din_ready(gready),
-    .dout_phy(gbeat),
-    .dout_valid(gbeat_v)
+  hsl_tx_gear #(.W(32)) u_gear (
+    .clk_ctrl   (gclk_c),
+    .clk_phy    (gclk_p),
+    .rst_n      (grst),
+    .din        (gdin),
+    .din_valid  (gvalid),
+    .dout       (gbeat),
+    .dout_valid (gbeat_v)
   );
 
   initial begin
     gclk_c = 1'b0;
     gclk_p = 1'b0;
+    gcyc = 0;
   end
   always #625ps gclk_c = ~gclk_c;
   always #312.5ps gclk_p = ~gclk_p;
 
   always @(posedge gclk_p) begin
-    if (grst && gbeat_v && (gcount < 2)) begin
+    gcyc <= gcyc + 1;
+    if (grst && gbeat_v && (gcount < 4)) begin
       ggot[gcount] <= gbeat;
-      gcount <= gcount + 1;
+      gat[gcount]  <= gcyc;
+      gcount       <= gcount + 1;
     end
   end
 
@@ -444,20 +451,28 @@ module tb_hsl_blocks (
       gcount = 0;
       repeat (4) @(posedge gclk_c);
       grst = 1'b1;
+      repeat (2) @(posedge gclk_c);
       @(negedge gclk_c);
       gvalid = 1'b1;
       @(posedge gclk_c);
       @(negedge gclk_c);
+      gdin = 32'h5566_7788;
+      @(posedge gclk_c);
+      @(negedge gclk_c);
       gvalid = 1'b0;
       guard = 0;
-      while ((gcount < 2) && (guard < 40)) begin
+      while ((gcount < 4) && (guard < 40)) begin
         @(posedge gclk_p);
         guard = guard + 1;
       end
+      @(posedge gclk_p);
       #1ps;
-      bump(gcount == 2, 7011);
+      bump(gcount == 4, 7011);
       bump(ggot[0] == 16'hC3D4, 7012);
       bump(ggot[1] == 16'hA1B2, 7013);
+      bump(ggot[2] == 16'h7788, 7014);
+      bump(ggot[3] == 16'h5566, 7015);
+      bump((gat[1] == gat[0] + 1) && (gat[2] == gat[0] + 2) && (gat[3] == gat[0] + 3), 7016);
       report("[E7]", e0);
     end
   endtask

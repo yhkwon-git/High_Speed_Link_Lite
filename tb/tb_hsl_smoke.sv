@@ -1,6 +1,6 @@
 // Chip-level smoke plus T1, T4, T5, T7, T8 (PRBS compare, loopback WR->RD),
 // T9 (DBI-AC at the pins, DBI on RD data), T10 (lane BIST, repair, retest),
-// and T11 (read leveling against per-lane eyes).
+// T11 (read leveling against per-lane eyes), and T12 (mission datapath).
 // Controller half-period is CTRL_PERIOD_PS/2 = 625 ps (800 MHz).
 `timescale 1ns/100fs
 `default_nettype none
@@ -56,6 +56,22 @@ module tb_hsl_smoke;
   wire  [PIN_W-1:0] link_to_dram;
   wire  [PIN_W-1:0] link_to_phy;
   wire  [DQ_W*RX_DLY_W-1:0] rx_dly_code; // chip -> analog delay lines (model)
+  // Mission pins; the link faults apply to every UI of a beat.
+  logic [RCA_W-1:0]    pin_rca;
+  logic [CCA_W-1:0]    pin_cca;
+  logic [BEAT_W-1:0]   pin_tx_beat;
+  logic [DDR_BITS-1:0] pin_tx_dqs;
+  logic                pin_tx_dv;
+  logic                pin_rdqs;
+  logic [BEAT_W-1:0]   dram_rx_beat;
+  logic                dram_rx_dv;
+  wire  [BEAT_W-1:0]   beat_to_dram;
+  wire  [BEAT_W-1:0]   beat_to_phy;
+  // Every response in order, for pipelined reads.
+  logic [31:0]         rsp_log [0:63];
+  integer              rsp_n   = 0;
+  integer              rsp_cyc = 0;
+  integer              tb_cyc  = 0;
   logic [DQ_W*RX_DLY_W-1:0] eye_lo;      // per-lane eye in delay codes
   logic [DQ_W*RX_DLY_W-1:0] eye_hi;
 
@@ -69,6 +85,9 @@ module tb_hsl_smoke;
     .pin_ck(pin_ck), .pin_cke(pin_cke), .pin_ca(pin_ca),
     .pin_dq_o(pin_dq_o), .pin_dq_oe(pin_dq_oe), .pin_dqs_o(pin_dqs_o),
     .pin_dq_i(pin_dq_i), .pin_dqs_i(pin_dqs_i),
+    .pin_rca(pin_rca), .pin_cca(pin_cca),
+    .pin_tx_beat(pin_tx_beat), .pin_tx_dqs(pin_tx_dqs), .pin_tx_dv(pin_tx_dv),
+    .pin_rdqs(pin_rdqs), .pin_rx_beat(beat_to_phy), .pin_rx_dv(dram_rx_dv),
     .rx_dly_code(rx_dly_code)
   );
 
@@ -79,12 +98,26 @@ module tb_hsl_smoke;
     .mr_dbi_en(mr_dbi_en), .mr_dbi_ac(mr_dbi_ac),
     .mr_repair_en(mr_repair_en), .mr_repair_lane(mr_repair_lane),
     .rx_dly(rx_dly_code), .eye_lo(eye_lo), .eye_hi(eye_hi),
-    .pin_dq_o(dram_dq), .pin_dqs_o(dram_dqs)
+    .pin_dq_o(dram_dq), .pin_dqs_o(dram_dqs),
+    .pin_rca(pin_rca), .pin_cca(pin_cca),
+    .pin_tx_beat(beat_to_dram), .pin_tx_dqs(pin_tx_dqs), .pin_tx_dv(pin_tx_dv),
+    .pin_rdqs(pin_rdqs), .pin_rx_beat(dram_rx_beat), .pin_rx_dv(dram_rx_dv)
   );
 
   assign link_to_dram = (pin_dq_o & ~fault_mask) | (fault_val & fault_mask);
   assign link_to_phy  = (dram_dq & ~fault_mask) | (fault_val & fault_mask);
   assign pin_dq_i     = link_to_phy;
+  assign beat_to_dram = (pin_tx_beat & ~{DDR_BITS{fault_mask}}) | ({DDR_BITS{fault_val}} & {DDR_BITS{fault_mask}});
+  assign beat_to_phy  = (dram_rx_beat & ~{DDR_BITS{fault_mask}}) | ({DDR_BITS{fault_val}} & {DDR_BITS{fault_mask}});
+
+  always @(posedge clk) begin
+    tb_cyc <= tb_cyc + 1;
+    if (rsp_valid) begin
+      rsp_log[rsp_n % 64] <= rsp_rdata;
+      rsp_n               <= rsp_n + 1;
+      rsp_cyc             <= tb_cyc;
+    end
+  end
   assign pin_dqs_i = dram_dqs;
 
   tb_hsl_blocks u_blocks (
@@ -184,7 +217,7 @@ module tb_hsl_smoke;
       expect_eq(rdata, TIMING0_DEFAULT, 3);
       csr_read(CSR_TIMING1, rdata);
       expect_eq(rdata, TIMING1_DEFAULT, 4);
-      csr_read(8'h24, rdata);
+      csr_read(8'h3C, rdata);
       expect_eq(rdata, 32'h0, 5);
       csr_read(CSR_ERRCNT, rdata);
       expect_eq(rdata, 32'h0, 6);
@@ -962,7 +995,7 @@ module tb_hsl_smoke;
 
   // Train against the eyes in t11_lo / t11_w and check code, start and width.
   // A soft reset first puts every lane back at code 16.
-  task automatic t11_round(output integer bad);
+  task automatic t11_round(input logic mission, output integer bad);
     integer      p;
     string       line;
     logic [7:0]  pre_bad;
@@ -971,7 +1004,11 @@ module tb_hsl_smoke;
       bad = 0;
       pre_bad = '0;
       t11_reset();
-      arm_bypass(32'h0);
+      if (mission) begin
+        arm_mission(32'h0);
+      end else begin
+        arm_bypass(32'h0);
+      end
       for (p = 0; p < DQ_W; p = p + 1) begin
         set_eye(p, t11_lo[p], t11_w[p]);
         if ((16 < t11_lo[p]) || (16 > t11_lo[p] + t11_w[p] - 1)) begin
@@ -1028,7 +1065,7 @@ module tb_hsl_smoke;
       t11_lo[2] = 18; t11_w[2] = 8;   t11_lo[3] = 6;  t11_w[3] = 12;
       t11_lo[4] = 20; t11_w[4] = 6;   t11_lo[5] = 1;  t11_w[5] = 10;
       t11_lo[6] = 12; t11_w[6] = 5;   t11_lo[7] = 15; t11_w[7] = 11;
-      t11_round(bad);
+      t11_round(1'b0, bad);
       t11bad = t11bad + bad;
 
       // Host traffic at the trained codes.
@@ -1058,7 +1095,7 @@ module tb_hsl_smoke;
         t11_w[p]  = 3 + ($urandom % 10);
         t11_lo[p] = $urandom % (33 - t11_w[p]);
       end
-      t11_round(bad);
+      t11_round(1'b0, bad);
       t11bad = t11bad + bad;
 
       // A closed eye on lane 3: training must say so.
@@ -1080,6 +1117,149 @@ module tb_hsl_smoke;
         $display("[T11] PASS");
       end else begin
         errors = errors + t11bad;
+      end
+    end
+  endtask
+
+  // ---------------------------------------------------------------------------
+  // T12: mission datapath (CA pins, 1.6 GHz beats with WDQS, RDQS capture and
+  // the Gray FIFO). The same 16 WR + 16 RD run on the bypass framer for a
+  // cycle count, then on the mission path, then with DBI-AC on both ends and a
+  // repaired stuck lane, then read leveling and loopback on the mission path.
+  // ---------------------------------------------------------------------------
+  task automatic arm_mission(input logic [31:0] extra);
+    begin
+      csr_write(CSR_CTRL, (32'h1 << CTRL_TRAIN_BYPASS) | (32'h1 << CTRL_PHY_EN) | extra);
+      wait_cycles(4);
+    end
+  endtask
+
+  function automatic logic [31:0] t12_data(input integer seed, input integer k);
+    t12_data = (32'h9E37_79B9 * 32'(seed * 16 + k + 1)) ^ {16'(k), 16'(seed)};
+  endfunction
+
+  task automatic t12_traffic(
+    input  logic [1:0] bank,
+    input  logic [7:0] row,
+    input  integer     seed,
+    output integer     bad,
+    output integer     cyc
+  );
+    integer k;
+    integer guard;
+    integer c0;
+    integer n0;
+    begin
+      bad = 0;
+      push_wait(OPC_ACT, bank, row, 4'h0, 32'h0);
+      c0 = tb_cyc;
+      n0 = rsp_n;
+      for (k = 0; k < 16; k = k + 1) begin
+        push_wait(OPC_WR, bank, row, 4'(k), t12_data(seed, k));
+      end
+      for (k = 0; k < 16; k = k + 1) begin
+        push_wait(OPC_RD, bank, row, 4'(k), 32'h0);
+      end
+      guard = 0;
+      while (((rsp_n - n0) < 16) && (guard < 2000)) begin
+        @(posedge clk);
+        guard = guard + 1;
+      end
+      #1ps;
+      cyc = rsp_cyc - c0;
+      if ((rsp_n - n0) != 16) begin
+        $display("[T12] seed %0d: %0d of 16 reads answered", seed, rsp_n - n0);
+        bad = bad + 1;
+      end
+      for (k = 0; k < 16; k = k + 1) begin
+        if (rsp_log[(n0 + k) % 64] !== t12_data(seed, k)) begin
+          $display("[T12] seed %0d col %0d: %h, expected %h", seed, k, rsp_log[(n0 + k) % 64],
+                   t12_data(seed, k));
+          bad = bad + 1;
+        end
+      end
+      push_wait(OPC_PRE, bank, row, 4'h0, 32'h0);
+      wait_cycles(8);
+    end
+  endtask
+
+  task automatic run_t12();
+    integer      t12bad;
+    integer      bad;
+    integer      cyc_byp;
+    integer      cyc_mis;
+    integer      cyc;
+    integer      n0;
+    integer      guard;
+    begin
+      t12bad = 0;
+
+      t11_reset();
+      arm_bypass(32'h0);
+      t12_traffic(2'd3, 8'h77, 1, bad, cyc_byp);
+      t12bad = t12bad + bad;
+
+      t11_reset();
+      arm_mission(32'h0);
+      t12_traffic(2'd3, 8'h78, 2, bad, cyc_mis);
+      t12bad = t12bad + bad;
+
+      // DBI-AC on both ends, lane 5 stuck at 1 and repaired.
+      fault_mask = 10'(1) << 5;
+      fault_val  = fault_mask;
+      set_repair(1'b1, 4'd5);
+      mr_dbi_en = 1'b1;
+      mr_dbi_ac = 1'b1;
+      arm_mission((32'h1 << CTRL_DBI_EN) | (32'h1 << CTRL_DBI_AC));
+      t12_traffic(2'd3, 8'h79, 3, bad, cyc);
+      t12bad = t12bad + bad;
+      mr_dbi_en = 1'b0;
+      mr_dbi_ac = 1'b0;
+      set_repair(1'b0, 4'd0);
+      fault_mask = '0;
+      fault_val  = '0;
+
+      // Read leveling through the mission path (the T11 fixed eyes).
+      t11_lo[0] = 3;  t11_w[0] = 7;   t11_lo[1] = 9;  t11_w[1] = 9;
+      t11_lo[2] = 18; t11_w[2] = 8;   t11_lo[3] = 6;  t11_w[3] = 12;
+      t11_lo[4] = 20; t11_w[4] = 6;   t11_lo[5] = 1;  t11_w[5] = 10;
+      t11_lo[6] = 12; t11_w[6] = 5;   t11_lo[7] = 15; t11_w[7] = 11;
+      t11_round(1'b1, bad);
+      t12bad = t12bad + bad;
+      eye_lo = '0;
+      eye_hi = '1;
+
+      // Loopback on the mission path: RD answers with the last WR burst.
+      t11_reset();
+      arm_mission(32'h1 << CTRL_LOOPBACK);
+      push_wait(OPC_ACT, 2'd0, 8'h11, 4'h0, 32'h0);
+      push_wait(OPC_WR, 2'd0, 8'h11, 4'h2, 32'h3333_CCCC);
+      n0 = rsp_n;
+      push_wait(OPC_RD, 2'd0, 8'h11, 4'h2, 32'h0);
+      guard = 0;
+      while ((rsp_n == n0) && (guard < 100)) begin
+        @(posedge clk);
+        guard = guard + 1;
+      end
+      #1ps;
+      if ((rsp_n == n0) || (rsp_log[n0 % 64] !== 32'h3333_CCCC)) begin
+        $display("[T12] mission loopback: %0d answers, %h", rsp_n - n0, rsp_log[n0 % 64]);
+        t12bad = t12bad + 1;
+      end
+      arm_mission(32'h0);
+
+      if ((u_dram.wdqs_err != 0) || (u_dram.mis_err != 0)) begin
+        $display("[T12] channel model: WDQS errors %0d, protocol errors %0d",
+                 u_dram.wdqs_err, u_dram.mis_err);
+        t12bad = t12bad + 1;
+      end
+      $display("[T12] 16 WR + 16 RD, first WR push to last read data: bypass %0d cycles, mission %0d cycles",
+               cyc_byp, cyc_mis);
+      t11_reset();
+      if (t12bad == 0) begin
+        $display("[T12] PASS");
+      end else begin
+        errors = errors + t12bad;
       end
     end
   endtask
@@ -1133,6 +1313,7 @@ module tb_hsl_smoke;
     run_t9();
     run_t10();
     run_t11();
+    run_t12();
 
     wait (block_done);
     if (block_errors != 0) errors = errors + block_errors;
