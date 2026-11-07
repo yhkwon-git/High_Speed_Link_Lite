@@ -11,6 +11,8 @@
 // runs, or in the same clock as its start, is held and goes when that engine
 // is done; the lane BIST goes first. Read leveling waits for a lane BIST run
 // it kicked, so its start must not be dropped. tp_busy hands the port to them.
+// hsl_bira turns the MBIST fail log into a spare row / column allocation, and
+// hsl_repair keeps the repair table (toward the array) and the fuses.
 // -----------------------------------------------------------------------------
 `default_nettype none
 
@@ -59,7 +61,30 @@ module hsl_dft_top (
   output logic [hsl_pkg::DATA_W-1:0] mb_first_bits,
   output logic [4:0]                 mb_log_n,
   output logic                       mb_log_ovf,
-  output logic [7:0]                 mb_log_entry
+  output logic [7:0]                 mb_log_entry,
+
+  // Repair
+  input  wire                        br_start,
+  input  wire                        br_apply,
+  input  wire                        rp_clear,
+  input  wire                        fz_program,
+  input  wire                        fz_load,
+  output logic                       br_busy,
+  output logic                       br_done,
+  output logic                       br_ok,
+  output logic [1:0]                 br_rows,
+  output logic [1:0]                 br_cols,
+  output logic [hsl_pkg::RT_N*hsl_pkg::RT_W-1:0] rep_tab,
+  output logic [1:0]                 fz_addr,
+  output logic                       fz_rd,
+  input  wire  [hsl_pkg::FZ_W-1:0]   fz_rdata,
+  output logic                       fz_pgm,
+  output logic [hsl_pkg::FZ_W-1:0]   fz_wdata,
+  output logic                       fz_busy,
+  output logic                       fz_loaded,
+  output logic [3:0]                 fz_ce,
+  output logic [3:0]                 fz_ue,
+  output logic [hsl_pkg::RT_N-1:0]   fz_drop
 );
   import hsl_pkg::*;
 
@@ -71,6 +96,13 @@ module hsl_dft_top (
   logic              mb_req_valid, mb_req_write;
   logic [ADDR_W-1:0] mb_req_addr;
   logic [DATA_W-1:0] mb_req_wdata;
+  logic [MB_LOG_N*8-1:0] mb_log_keys;
+  logic [BANK_W-1:0]     mb_rg_bank;
+  logic [ROW_W-1:0]      mb_rg_row0;
+  logic [SPR_N-1:0]      rr_en;
+  logic [SPR_N*4-1:0]    rr_roff;
+  logic [SPC_N-1:0]      cr_en;
+  logic [SPC_N*4-1:0]    cr_col;
   logic              lb_hold, mb_hold;   // a start waiting for the port
   logic              lb_go, mb_go;
 
@@ -168,7 +200,63 @@ module hsl_dft_top (
     .log_n      (mb_log_n),
     .log_ovf    (mb_log_ovf),
     .log_sel    (mb_log_sel),
-    .log_entry  (mb_log_entry)
+    .log_entry  (mb_log_entry),
+    .log_keys   (mb_log_keys),
+    .rg_bank    (mb_rg_bank),
+    .rg_row0    (mb_rg_row0)
+  );
+
+  // Analysis of the last MBIST run; not while it runs.
+  hsl_bira #(.LOG_N(MB_LOG_N), .SPR(SPR_N), .SPC(SPC_N)) u_bira (
+    .clk      (clk),
+    .rst_n    (rst_n),
+    .start    (br_start && !mb_busy),
+    .log_n    (mb_log_n),
+    .log_ovf  (mb_log_ovf),
+    .log_keys (mb_log_keys),
+    .col_ok   (mb_rg_row0[3:0] == 4'h0),
+    .busy     (br_busy),
+    .done     (br_done),
+    .ok       (br_ok),
+    .rr_en    (rr_en),
+    .rr_roff  (rr_roff),
+    .cr_en    (cr_en),
+    .cr_col   (cr_col)
+  );
+
+  always_comb begin
+    br_rows = '0;
+    br_cols = '0;
+    for (int s = 0; s < SPR_N; s++) br_rows = br_rows + {1'b0, rr_en[s]};
+    for (int s = 0; s < SPC_N; s++) br_cols = br_cols + {1'b0, cr_en[s]};
+  end
+
+  hsl_repair #(.SPR(SPR_N), .SPC(SPC_N)) u_repair (
+    .clk        (clk),
+    .rst_n      (rst_n),
+    .apply      (br_apply),
+    .clear      (rp_clear),
+    .fz_program (fz_program),
+    .fz_load    (fz_load),
+    .bira_done  (br_done),
+    .bira_ok    (br_ok),
+    .rr_en      (rr_en),
+    .rr_roff    (rr_roff),
+    .cr_en      (cr_en),
+    .cr_col     (cr_col),
+    .rg_bank    (mb_rg_bank),
+    .rg_row0    (mb_rg_row0),
+    .rep_tab    (rep_tab),
+    .fz_addr    (fz_addr),
+    .fz_rd      (fz_rd),
+    .fz_rdata   (fz_rdata),
+    .fz_pgm     (fz_pgm),
+    .fz_wdata   (fz_wdata),
+    .fz_busy    (fz_busy),
+    .fz_loaded  (fz_loaded),
+    .fz_ce      (fz_ce),
+    .fz_ue      (fz_ue),
+    .fz_drop    (fz_drop)
   );
 
   wire unused_bit = prbs_bit;

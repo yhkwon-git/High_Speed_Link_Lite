@@ -131,6 +131,30 @@ package hsl_pkg;
   // MBIST_BITS read:  bits that differed in the first failing read
   localparam int MB_LOG_N = 16;
 
+  // Repair. The array has SPR_N spare rows and SPC_N spare columns (a spare
+  // column replaces one column of a 16-row block). The repair table goes to the
+  // array as rep_tab, one entry per spare (rows first), 16 bits each:
+  //   [15] valid, [13:12] bank, [11:4] row (for a column: block << 4), [3:0] col
+  // It is loaded from the fuses after reset, or from the BIRA result.
+  // BIRA write:   [0] start (analyze the MBIST fail log), [1] apply the result
+  //               to the repair table, [2] clear the table
+  // BIRA read:    [0] busy, [1] done, [2] repairable, [5:4] spare rows used,
+  //               [7:6] spare columns used
+  // REPAIR write: [1:0] table entry to read back
+  // REPAIR read:  [15:0] that entry, [17:16] its index
+  // FUSE write:   [0] program the table into the fuses, [1] load the fuses
+  // FUSE read:    [0] busy, [1] loaded, [7:4] corrected words,
+  //               [11:8] uncorrectable words, [15:12] entries dropped
+  // A fuse word is the entry in [15:0] of 32 data bits, SECDED (39,32).
+  localparam int SPR_N   = 2;
+  localparam int SPC_N   = 2;
+  localparam int RT_N    = SPR_N + SPC_N;
+  localparam int RT_W    = 16;
+  localparam int FZ_W    = 39;
+  localparam logic [7:0] CSR_BIRA   = 8'h38;
+  localparam logic [7:0] CSR_REPAIR = 8'h3C;
+  localparam logic [7:0] CSR_FUSE   = 8'h40;
+
   // Read leveling: one delay-line code per DQ lane toward the analog PHY.
   // RDTRAIN write: [0] start, [6:4] lane to read back.
   // RDTRAIN read:  [0] busy, [1] done, [2] every lane found an eye,

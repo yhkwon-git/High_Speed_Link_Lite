@@ -24,7 +24,7 @@
 // Each mismatching read counts in fail_cnt (saturating). The first one keeps
 // its host address and the bits that differed. The fail log keeps each
 // failing word once, as {row offset, column}, up to LOG_N words; one more
-// sets log_ovf. A repair engine reads it through log_sel.
+// sets log_ovf. The repair engine (hsl_bira) reads the whole log (log_keys).
 // Start with the host quiet; the top hands this engine the request port while
 // it runs.
 // -----------------------------------------------------------------------------
@@ -60,7 +60,10 @@ module hsl_mbist #(
   output logic [4:0]                 log_n,
   output logic                       log_ovf,
   input  wire  [3:0]                 log_sel,
-  output logic [7:0]                 log_entry
+  output logic [7:0]                 log_entry,
+  output logic [LOG_N*8-1:0]         log_keys,   // the whole log, entry i in [8i+7:8i]
+  output logic [hsl_pkg::BANK_W-1:0] rg_bank,    // region of the last run
+  output logic [hsl_pkg::ROW_W-1:0]  rg_row0
 );
   import hsl_pkg::*;
 
@@ -145,6 +148,11 @@ module hsl_mbist #(
   assign req_valid = (state == S_ISSUE);
   assign req_wdata = exp_word;
   assign log_entry = log_key[log_sel];
+  assign rg_bank   = bank_r;
+  assign rg_row0   = row0_r;
+  always_comb begin
+    for (int i = 0; i < LOG_N; i++) log_keys[8*i +: 8] = log_key[i];
+  end
 
   always_comb begin
     seen = 1'b0;

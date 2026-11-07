@@ -17,6 +17,10 @@
 //   T13    MBIST: 24 array faults x MATS+ / March X / March C- against the
 //          reference detection table, the fail log and its overflow, one
 //          BIST engine at a time
+//   T14    repair: BIRA on the fail log (must-repair, spare-order search), soft repair and
+//          retest, fuse program and load after reset, fuse ECC (1 bit
+//          corrected, 2 bits dropped), not repairable, random fault maps
+//          against a reference
 // Every host response is checked against a reference memory (scoreboard).
 // Controller half-period is CTRL_PERIOD_PS/2 = 625 ps (800 MHz).
 `timescale 1ns/100fs
@@ -72,6 +76,22 @@ module tb_hsl_smoke;
   logic [DQ_W*RX_DLY_W-1:0] eye_lo;      // per-lane eye in delay codes
   logic [DQ_W*RX_DLY_W-1:0] eye_hi;
 
+  // Repair table toward the array, and the fuse model: RT_N one-time
+  // programmable words (a bit only goes 0 -> 1), read back one clock after
+  // fz_rd. The fuses keep their value across chip resets.
+  wire  [RT_N*RT_W-1:0] rep_tab;
+  wire  [1:0]           fz_addr;
+  wire                  fz_rd;
+  wire                  fz_pgm;
+  wire  [FZ_W-1:0]      fz_wdata;
+  logic [FZ_W-1:0]      fz_rdata = '0;
+  logic [FZ_W-1:0]      fuse [0:RT_N-1];
+  initial for (int k = 0; k < RT_N; k++) fuse[k] = '0;
+  always @(posedge clk) begin
+    if (fz_rd)  fz_rdata <= fuse[fz_addr];
+    if (fz_pgm) fuse[fz_addr] <= fuse[fz_addr] | fz_wdata;
+  end
+
   logic rsp_stall = 1'b0; // hold every response
   logic rsp_rand  = 1'b0; // take a response three clocks in four
 
@@ -85,7 +105,9 @@ module tb_hsl_smoke;
     .pin_rca(pin_rca), .pin_cca(pin_cca),
     .pin_tx_beat(pin_tx_beat), .pin_tx_dqs(pin_tx_dqs), .pin_tx_dv(pin_tx_dv),
     .pin_rdqs(pin_rdqs), .pin_rx_beat(beat_to_phy), .pin_rx_dv(dram_rx_dv),
-    .rx_dly_code(rx_dly_code)
+    .rx_dly_code(rx_dly_code),
+    .rep_tab(rep_tab), .fz_addr(fz_addr), .fz_rd(fz_rd), .fz_rdata(fz_rdata),
+    .fz_pgm(fz_pgm), .fz_wdata(fz_wdata)
   );
 
   dram_channel_behav u_dram (
@@ -93,7 +115,7 @@ module tb_hsl_smoke;
     .pin_ck(pin_ck), .pin_cke(pin_cke),
     .mr_dbi_en(mr_dbi_en), .mr_dbi_ac(mr_dbi_ac),
     .mr_repair_en(mr_repair_en), .mr_repair_lane(mr_repair_lane),
-    .rx_dly(rx_dly_code), .eye_lo(eye_lo), .eye_hi(eye_hi),
+    .rx_dly(rx_dly_code), .eye_lo(eye_lo), .eye_hi(eye_hi), .rep_tab(rep_tab),
     .pin_rca(pin_rca), .pin_cca(pin_cca),
     .pin_tx_beat(beat_to_dram), .pin_tx_dqs(pin_tx_dqs), .pin_tx_dv(pin_tx_dv),
     .pin_rdqs(pin_rdqs), .pin_rx_beat(dram_rx_beat), .pin_rx_dv(dram_rx_dv)
@@ -1684,7 +1706,7 @@ module tb_hsl_smoke;
   task automatic clear_faults();
     integer f;
     begin
-      for (f = 0; f < 4; f = f + 1) u_dram.flt_kind[f] = 0;
+      for (f = 0; f < 16; f = f + 1) u_dram.flt_kind[f] = 0;
     end
   endtask
 
@@ -1733,7 +1755,7 @@ module tb_hsl_smoke;
                             2'(algo), 1'b1});
       guard = 0;
       st = '0;
-      while (((st[0] === 1'b1) || (st[1] !== 1'b1)) && (guard < 20000)) begin
+      while (((st[0] === 1'b1) || (st[1] !== 1'b1)) && (guard < 200000)) begin
         csr_read(CSR_MBIST, st);
         guard = guard + 1;
       end
@@ -1919,6 +1941,419 @@ module tb_hsl_smoke;
     end
   endtask
 
+  // ---------------------------------------------------------------------------
+  // T14: repair. SA1 words in bank 2, block C0 (16 rows x 16 columns); March C-
+  // finds them, BIRA allocates the 2 spare rows and 2 spare columns, the
+  // repair table sends the spares to the array, and a retest must pass. The
+  // table then goes into the fuses and comes back after a reset.
+  // ---------------------------------------------------------------------------
+  task automatic t14_sa1(input integer f, input integer roff, input integer col, input integer bt);
+    begin
+      set_fault(f, 1, host_addr(T13_BANK, T13_ROW + 8'(roff), 4'(col)), bt,
+                host_addr(T13_BANK, T13_ROW + 8'(roff), 4'(col)), bt, 0, 1, 0);
+    end
+  endtask
+
+  // Poll a status register until its busy bit [0] is low.
+  task automatic t14_wait(input logic [7:0] addr, output logic [31:0] v);
+    integer guard;
+    begin
+      guard = 0;
+      v = 32'h1;
+      while ((v[0] === 1'b1) && (guard < 1000)) begin
+        csr_read(addr, v);
+        guard = guard + 1;
+      end
+    end
+  endtask
+
+  // Reference BIRA with the rules of hsl_bira, on keys {row offset, col} in
+  // log order: must-repair passes until one changes nothing, then the spare
+  // orders 0..15 (bit t = 1: the t-th spare taken is a row). Spares are
+  // returned in allocation order.
+  task automatic bira_ref(input integer n, input integer kr [0:15], input integer kc [0:15],
+                          output logic ok, output integer rows [0:1], output integer cols [0:1],
+                          output integer nr, output integer nc);
+    logic   cov [0:15];
+    logic   cv [0:15];
+    logic   chg;
+    logic   fail;
+    logic   tr;
+    logic   tc;
+    logic   good;
+    integer i;
+    integer e;
+    integer rc;
+    integer cc;
+    integer od;
+    integer ln;
+    integer ones;
+    integer t;
+    integer nr0;
+    integer nc0;
+    integer r0 [0:1];
+    integer c0 [0:1];
+    begin
+      for (e = 0; e < 16; e = e + 1) cov[e] = 1'b0;
+      nr = 0;
+      nc = 0;
+      fail = 1'b0;
+      chg = 1'b1;
+      while (!fail && chg) begin
+        chg = 1'b0;
+        for (i = 0; (i < n) && !fail; i = i + 1) begin
+          if (!cov[i]) begin
+            rc = 0;
+            cc = 0;
+            for (e = 0; e < n; e = e + 1) begin
+              if (!cov[e] && (kr[e] == kr[i])) rc = rc + 1;
+              if (!cov[e] && (kc[e] == kc[i])) cc = cc + 1;
+            end
+            tr = 1'b0;
+            tc = 1'b0;
+            if (rc > 2 - nc) begin
+              if (nr < 2) tr = 1'b1;
+              else        fail = 1'b1;
+            end else if (cc > 2 - nr) begin
+              if (nc < 2) tc = 1'b1;
+              else        fail = 1'b1;
+            end
+            if (tr) begin
+              rows[nr] = kr[i];
+              nr = nr + 1;
+            end
+            if (tc) begin
+              cols[nc] = kc[i];
+              nc = nc + 1;
+            end
+            if (tr || tc) chg = 1'b1;
+            for (e = 0; e < n; e = e + 1) begin
+              if ((tr && (kr[e] == kr[i])) || (tc && (kc[e] == kc[i]))) cov[e] = 1'b1;
+            end
+          end
+        end
+      end
+      ok = 1'b0;
+      if (!fail) begin
+        nr0 = nr;
+        nc0 = nc;
+        for (e = 0; e < 2; e = e + 1) begin
+          r0[e] = rows[e];
+          c0[e] = cols[e];
+        end
+        ln = (2 - nr0) + (2 - nc0);
+        for (od = 0; (od < 16) && !ok; od = od + 1) begin
+          ones = 0;
+          for (e = 0; e < 4; e = e + 1) if (((od >> e) & 1) != 0) ones = ones + 1;
+          if (((od >> ln) == 0) && (ones == 2 - nr0)) begin
+            for (e = 0; e < 16; e = e + 1) cv[e] = cov[e];
+            nr = nr0;
+            nc = nc0;
+            for (e = 0; e < 2; e = e + 1) begin
+              rows[e] = r0[e];
+              cols[e] = c0[e];
+            end
+            t = 0;
+            good = 1'b1;
+            for (i = 0; (i < n) && good; i = i + 1) begin
+              if (!cv[i]) begin
+                if (t == ln) begin
+                  good = 1'b0;
+                end else begin
+                  if (((od >> t) & 1) != 0) begin
+                    rows[nr] = kr[i];
+                    nr = nr + 1;
+                    for (e = 0; e < n; e = e + 1) if (kr[e] == kr[i]) cv[e] = 1'b1;
+                  end else begin
+                    cols[nc] = kc[i];
+                    nc = nc + 1;
+                    for (e = 0; e < n; e = e + 1) if (kc[e] == kc[i]) cv[e] = 1'b1;
+                  end
+                  t = t + 1;
+                end
+              end
+            end
+            ok = good;
+          end
+        end
+      end
+    end
+  endtask
+
+  // Table entries as the hardware should hold them.
+  function automatic logic [15:0] t14_row_ent(input integer roff);
+    t14_row_ent = {1'b1, 1'b0, T13_BANK, T13_ROW + 8'(roff), 4'h0};
+  endfunction
+  function automatic logic [15:0] t14_col_ent(input integer col);
+    t14_col_ent = {1'b1, 1'b0, T13_BANK, T13_ROW[7:4], 4'h0, 4'(col)};
+  endfunction
+
+  task automatic run_t14();
+    integer      t14bad;
+    integer      cyc;
+    integer      k;
+    integer      m;
+    integer      n;
+    integer      e;
+    integer      t;
+    integer      nrep;
+    integer      lcg;
+    integer      kr [0:15];
+    integer      kc [0:15];
+    integer      rows [0:1];
+    integer      cols [0:1];
+    integer      nr;
+    integer      nc;
+    integer      sp0;
+    logic        ok;
+    logic        dup;
+    logic [31:0] st;
+    logic [31:0] br;
+    logic [31:0] v;
+    logic [15:0] exp_e [0:3];
+    begin
+      t14bad = 0;
+      soft_reset();
+      arm_mission(32'h0);
+      clear_faults();
+
+      // A: 8 failing words. Row +1 has 3 (more than the 2 spare columns: must
+      // take a row), column 5 has 3 in rows +4, +9, +13 (must take a column),
+      // then row +6 has 2 with one spare column left (must take the last row).
+      t14_sa1(0, 1, 2, 0);
+      t14_sa1(1, 1, 7, 9);
+      t14_sa1(2, 1, 11, 31);
+      t14_sa1(3, 4, 5, 3);
+      t14_sa1(4, 9, 5, 3);
+      t14_sa1(5, 13, 5, 17);
+      t14_sa1(6, 6, 3, 1);
+      t14_sa1(7, 6, 14, 22);
+      t13_zero(16);
+      mbist_run(2, 15, 4, st, cyc);
+      csr_write(CSR_BIRA, 32'h1);
+      t14_wait(CSR_BIRA, br);
+      exp_e[0] = t14_row_ent(1);
+      exp_e[1] = t14_row_ent(6);
+      exp_e[2] = t14_col_ent(5);
+      exp_e[3] = 16'h0;
+      csr_write(CSR_BIRA, 32'h2);
+      for (k = 0; k < 4; k = k + 1) begin
+        csr_write(CSR_REPAIR, 32'(k));
+        csr_read(CSR_REPAIR, v);
+        if (v[15:0] !== exp_e[k]) begin
+          $display("[T14] A: table entry %0d %h, expected %h", k, v[15:0], exp_e[k]);
+          t14bad = t14bad + 1;
+        end
+      end
+      if ((st[2] !== 1'b0) || (st[8:4] !== 5'd8) || (br[7:0] !== 8'b0110_0110)) begin
+        $display("[T14] A: MBIST %h, BIRA %h", st, br);
+        t14bad = t14bad + 1;
+      end
+      sp0 = u_dram.n_spare;
+      t13_zero(16);
+      mbist_run(2, 15, 4, v, cyc);
+      if ((v[2:0] !== 3'b110) || (u_dram.n_spare == sp0)) begin
+        $display("[T14] A: retest after soft repair %h, spare accesses %0d", v, u_dram.n_spare - sp0);
+        t14bad = t14bad + 1;
+      end
+      $display("[T14] A: 8 failing words -> spare rows +1 +6, spare column 5 (BIRA %h); retest PASS, %0d array accesses went to spares",
+               br[7:0], u_dram.n_spare - sp0);
+
+      // B: hard repair. Program the fuses, empty the table, reset the chip:
+      // the fuse load after reset brings the table back.
+      csr_write(CSR_FUSE, 32'h1);
+      t14_wait(CSR_FUSE, v);
+      csr_write(CSR_BIRA, 32'h4);
+      csr_write(CSR_REPAIR, 32'd0);
+      csr_read(CSR_REPAIR, v);
+      if (v[15:0] !== 16'h0) begin
+        $display("[T14] B: table not cleared: %h", v);
+        t14bad = t14bad + 1;
+      end
+      soft_reset();
+      arm_mission(32'h0);
+      t14_wait(CSR_FUSE, v);
+      for (k = 0; k < 4; k = k + 1) begin
+        csr_write(CSR_REPAIR, 32'(k));
+        csr_read(CSR_REPAIR, br);
+        if (br[15:0] !== exp_e[k]) begin
+          $display("[T14] B: entry %0d after the fuse load %h, expected %h", k, br[15:0], exp_e[k]);
+          t14bad = t14bad + 1;
+        end
+      end
+      t13_zero(16);
+      mbist_run(2, 15, 4, st, cyc);
+      if ((v[1:0] !== 2'b10) || (v[15:4] !== 12'h0) || (st[2:0] !== 3'b110)) begin
+        $display("[T14] B: fuse status %h, retest %h", v, st);
+        t14bad = t14bad + 1;
+      end
+      $display("[T14] B: fuses programmed, table cleared, chip reset: the fuse load restored all 4 entries, retest PASS");
+
+      // C: fuse ECC. One flipped bit in word 0 is corrected; two in word 2
+      // make it uncorrectable: that entry (column 5) is dropped, and column 5
+      // fails again (3 words, 3 failing r0 each).
+      fuse[0][7]  = ~fuse[0][7];
+      fuse[2][3]  = ~fuse[2][3];
+      fuse[2][20] = ~fuse[2][20];
+      soft_reset();
+      arm_mission(32'h0);
+      t14_wait(CSR_FUSE, v);
+      csr_write(CSR_REPAIR, 32'd0);
+      csr_read(CSR_REPAIR, br);
+      t13_zero(16);
+      mbist_run(2, 15, 4, st, cyc);
+      if ((v[1:0] !== 2'b10) || (v[7:4] !== 4'd1) || (v[11:8] !== 4'd1) || (v[15:12] !== 4'b0100) ||
+          (br[15:0] !== exp_e[0]) || (st[2] !== 1'b0) || (st[8:4] !== 5'd3) || (st[31:16] !== 16'd9)) begin
+        $display("[T14] C: fuse status %h, entry 0 %h, retest %h", v, br, st);
+        t14bad = t14bad + 1;
+      end
+      $display("[T14] C: fuse word 0 with 1 bit flipped: corrected (%0d); word 2 with 2 bits: dropped (%0d, map %b); column 5 fails again: %0d words, %0d reads",
+               v[7:4], v[11:8], v[15:12], st[8:4], st[31:16]);
+      for (k = 0; k < RT_N; k = k + 1) fuse[k] = '0;
+      clear_faults();
+      soft_reset();
+      arm_mission(32'h0);
+      t14_wait(CSR_FUSE, v);
+
+      // D: not repairable. Five words on a diagonal need five spares; a log
+      // that overflowed (DQ pin stuck: every word fails) cannot be analyzed.
+      for (k = 0; k < 5; k = k + 1) t14_sa1(k, 3 * k, 3 * k, k);
+      t13_zero(16);
+      mbist_run(2, 15, 4, st, cyc);
+      csr_write(CSR_BIRA, 32'h1);
+      t14_wait(CSR_BIRA, br);
+      if ((st[8:4] !== 5'd5) || (br[2:0] !== 3'b010)) begin
+        $display("[T14] D: diagonal of 5: MBIST %h, BIRA %h", st, br);
+        t14bad = t14bad + 1;
+      end
+      clear_faults();
+      fault_mask = 10'(1) << 5;
+      fault_val  = fault_mask;
+      t13_zero(4);
+      mbist_run(2, 3, 4, st, cyc);
+      fault_mask = '0;
+      fault_val  = '0;
+      csr_write(CSR_BIRA, 32'h1);
+      t14_wait(CSR_BIRA, v);
+      if ((st[3] !== 1'b1) || (v[2:0] !== 3'b010)) begin
+        $display("[T14] D: overflowed log: MBIST %h, BIRA %h", st, v);
+        t14bad = t14bad + 1;
+      end
+      $display("[T14] D: 5 words on a diagonal, and an overflowed log: both not repairable");
+
+      // E: a map a greedy pass cannot repair. Greedy gives the first word its
+      // row (+10), then +11, and runs out of spares; the spare-order search
+      // finds rows +10 +14 and columns 9 10 (tb/bira_ref.py).
+      t14_sa1(0, 10, 0, 4);
+      t14_sa1(1, 11, 9, 4);
+      t14_sa1(2, 13, 10, 4);
+      t14_sa1(3, 14, 8, 4);
+      t14_sa1(4, 14, 14, 4);
+      t13_zero(16);
+      mbist_run(2, 15, 4, st, cyc);
+      csr_write(CSR_BIRA, 32'h1);
+      t14_wait(CSR_BIRA, br);
+      csr_write(CSR_BIRA, 32'h2);
+      exp_e[0] = t14_row_ent(10);
+      exp_e[1] = t14_row_ent(14);
+      exp_e[2] = t14_col_ent(9);
+      exp_e[3] = t14_col_ent(10);
+      for (k = 0; k < 4; k = k + 1) begin
+        csr_write(CSR_REPAIR, 32'(k));
+        csr_read(CSR_REPAIR, v);
+        if (v[15:0] !== exp_e[k]) begin
+          $display("[T14] E: table entry %0d %h, expected %h", k, v[15:0], exp_e[k]);
+          t14bad = t14bad + 1;
+        end
+      end
+      t13_zero(16);
+      mbist_run(2, 15, 4, v, cyc);
+      if ((br[7:0] !== 8'b1010_0110) || (v[2:0] !== 3'b110)) begin
+        $display("[T14] E: BIRA %h, retest %h", br, v);
+        t14bad = t14bad + 1;
+      end
+      $display("[T14] E: 5 words a greedy pass cannot repair: rows +10 +14, columns 9 10, retest PASS");
+      csr_write(CSR_BIRA, 32'h4);
+      clear_faults();
+
+      // F: random maps in rows C0-C7 (8 x 16 words), 3-8 SA1 words each. BIRA
+      // must match the reference; a repairable map must pass the retest.
+      lcg = 32'h1234_5678;
+      nrep = 0;
+      for (m = 0; m < 12; m = m + 1) begin
+        clear_faults();
+        n = 3 + (m % 6);
+        e = 0;
+        while (e < n) begin
+          lcg = lcg * 1103515245 + 12345;
+          kr[e] = (lcg >>> 16) & 7;
+          lcg = lcg * 1103515245 + 12345;
+          kc[e] = (lcg >>> 16) & 15;
+          dup = 1'b0;
+          for (k = 0; k < e; k = k + 1) begin
+            if ((kr[k] == kr[e]) && (kc[k] == kc[e])) dup = 1'b1;
+          end
+          if (!dup) e = e + 1;
+        end
+        // The log is in visiting order (row-major).
+        for (e = 0; e < n; e = e + 1) begin
+          for (k = 0; k < n - 1 - e; k = k + 1) begin
+            if (kr[k] * 16 + kc[k] > kr[k+1] * 16 + kc[k+1]) begin
+              t = kr[k];
+              kr[k] = kr[k+1];
+              kr[k+1] = t;
+              t = kc[k];
+              kc[k] = kc[k+1];
+              kc[k+1] = t;
+            end
+          end
+        end
+        for (e = 0; e < n; e = e + 1) t14_sa1(e, kr[e], kc[e], (e * 7) % 32);
+        bira_ref(n, kr, kc, ok, rows, cols, nr, nc);
+        t13_zero(8);
+        mbist_run(2, 7, 4, st, cyc);
+        csr_write(CSR_BIRA, 32'h1);
+        t14_wait(CSR_BIRA, br);
+        if ((st[8:4] !== 5'(n)) || (br[1] !== 1'b1) || (br[2] !== ok) ||
+            (ok && ((br[5:4] !== 2'(nr)) || (br[7:6] !== 2'(nc))))) begin
+          $display("[T14] F map %0d (%0d words): MBIST %h, BIRA %h, reference ok %b rows %0d cols %0d",
+                   m, n, st, br, ok, nr, nc);
+          t14bad = t14bad + 1;
+        end
+        if (ok) begin
+          nrep = nrep + 1;
+          csr_write(CSR_BIRA, 32'h2);
+          for (k = 0; k < 4; k = k + 1) begin
+            if (k < 2) exp_e[k] = (k < nr) ? t14_row_ent(rows[k]) : 16'h0;
+            else       exp_e[k] = (k - 2 < nc) ? t14_col_ent(cols[k-2]) : 16'h0;
+            csr_write(CSR_REPAIR, 32'(k));
+            csr_read(CSR_REPAIR, v);
+            if (v[15:0] !== exp_e[k]) begin
+              $display("[T14] F map %0d: entry %0d %h, reference %h", m, k, v[15:0], exp_e[k]);
+              t14bad = t14bad + 1;
+            end
+          end
+          t13_zero(8);
+          mbist_run(2, 7, 4, v, cyc);
+          if (v[2:0] !== 3'b110) begin
+            $display("[T14] F map %0d: retest %h", m, v);
+            t14bad = t14bad + 1;
+          end
+          csr_write(CSR_BIRA, 32'h4);
+        end
+      end
+      clear_faults();
+      $display("[T14] F: 12 random maps of 3-8 words: BIRA matches the reference on all 12, %0d repairable, each passes the retest",
+               nrep);
+
+      if (t14bad == 0) begin
+        $display("[T14] PASS");
+      end else begin
+        errors = errors + t14bad;
+      end
+    end
+  endtask
+
   initial begin
     errors = 0;
     // block_errors is driven by the u_blocks output port only.
@@ -1972,6 +2407,7 @@ module tb_hsl_smoke;
     run_t11();
     run_t12();
     run_t13();
+    run_t14();
 
     if (sb_err != 0) begin
       $display("[SB] %0d read mismatches over the run", sb_err);
@@ -1993,7 +2429,7 @@ module tb_hsl_smoke;
   end
 
   initial begin
-    #400000;
+    #2000000;
     $fatal(1, "[SMOKE] timeout");
   end
 endmodule

@@ -27,6 +27,10 @@
 // req_ready and rsp_valid to the host are held at 0 and the engine takes every
 // response, so start it with the host quiet and every response taken.
 //
+// Repair: hsl_bira allocates spare rows and columns from the MBIST fail log;
+// the repair table (rep_tab) goes to the array, where the spares are. After
+// reset the table is loaded from the fuses (fz_*, SECDED-protected words).
+//
 // Read leveling (hsl_rd_train) sweeps the per-lane delay codes on rx_dly_code,
 // which go to the analog delay lines outside this block, and runs the lane
 // BIST at each code.
@@ -67,7 +71,15 @@ module hsl_base_die_lite (
   input  wire                            pin_rx_dv,
 
   // One read delay-line code per DQ lane, to the analog PHY.
-  output logic [hsl_pkg::DQ_W*hsl_pkg::RX_DLY_W-1:0] rx_dly_code
+  output logic [hsl_pkg::DQ_W*hsl_pkg::RX_DLY_W-1:0] rx_dly_code,
+
+  // Repair table toward the array's spare rows and columns, and the fuse port.
+  output logic [hsl_pkg::RT_N*hsl_pkg::RT_W-1:0]      rep_tab,
+  output logic [1:0]                                 fz_addr,
+  output logic                                       fz_rd,
+  input  wire  [hsl_pkg::FZ_W-1:0]                   fz_rdata,
+  output logic                                       fz_pgm,
+  output logic [hsl_pkg::FZ_W-1:0]                   fz_wdata
 );
   logic rst_sync_n;
   logic rst_logic_n;
@@ -115,6 +127,11 @@ module hsl_base_die_lite (
   logic [hsl_pkg::ADDR_W-1:0] mb_first_addr;
   logic [hsl_pkg::DATA_W-1:0] mb_first_bits;
   logic [4:0] mb_log_n;
+  logic br_start, br_apply, rp_clear, fz_program, fz_load;
+  logic br_busy, br_done, br_ok, fz_busy, fz_loaded;
+  logic [1:0] br_rows, br_cols;
+  logic [3:0] fz_ce, fz_ue;
+  logic [hsl_pkg::RT_N-1:0] fz_drop;
   logic [7:0] lb_lane_err;
   logic [4:0] lb_err_bursts;
   logic rt_start, rt_bist_start, rt_busy, rt_done, rt_ok;
@@ -186,7 +203,23 @@ module hsl_base_die_lite (
     .mb_first_bits(mb_first_bits),
     .mb_log_n     (mb_log_n),
     .mb_log_ovf   (mb_log_ovf),
-    .mb_log_entry (mb_log_entry)
+    .mb_log_entry (mb_log_entry),
+    .br_start     (br_start),
+    .br_apply     (br_apply),
+    .rp_clear     (rp_clear),
+    .fz_program   (fz_program),
+    .fz_load      (fz_load),
+    .br_busy      (br_busy),
+    .br_done      (br_done),
+    .br_ok        (br_ok),
+    .br_rows      (br_rows),
+    .br_cols      (br_cols),
+    .rep_tab      (rep_tab),
+    .fz_busy      (fz_busy),
+    .fz_loaded    (fz_loaded),
+    .fz_ce        (fz_ce),
+    .fz_ue        (fz_ue),
+    .fz_drop      (fz_drop)
   );
 
   hsl_rd_train u_rd_train (
@@ -302,7 +335,28 @@ module hsl_base_die_lite (
     .mb_first_bits (mb_first_bits),
     .mb_log_n      (mb_log_n),
     .mb_log_ovf    (mb_log_ovf),
-    .mb_log_entry  (mb_log_entry)
+    .mb_log_entry  (mb_log_entry),
+    .br_start      (br_start),
+    .br_apply      (br_apply),
+    .rp_clear      (rp_clear),
+    .fz_program    (fz_program),
+    .fz_load       (fz_load),
+    .br_busy       (br_busy),
+    .br_done       (br_done),
+    .br_ok         (br_ok),
+    .br_rows       (br_rows),
+    .br_cols       (br_cols),
+    .rep_tab       (rep_tab),
+    .fz_addr       (fz_addr),
+    .fz_rd         (fz_rd),
+    .fz_rdata      (fz_rdata),
+    .fz_pgm        (fz_pgm),
+    .fz_wdata      (fz_wdata),
+    .fz_busy       (fz_busy),
+    .fz_loaded     (fz_loaded),
+    .fz_ce         (fz_ce),
+    .fz_ue         (fz_ue),
+    .fz_drop       (fz_drop)
   );
 
   hsl_phy_top u_phy (

@@ -48,6 +48,7 @@
 //         the victim bit
 //   CFid  the same transition forces the victim bit to flt_val
 //   CFst  while the aggressor bit is flt_s, the victim bit reads flt_val
+// Spare rows and columns take the accesses rep_tab names (see spare_of).
 // The array starts at all zeros. tb/march_ref.py implements the same rules in a
 // reference March simulator; it gives the expected MBIST detection table (T13).
 //
@@ -71,6 +72,7 @@ module dram_channel_behav (
   input  wire  [hsl_pkg::DQ_W*hsl_pkg::RX_DLY_W-1:0] rx_dly,
   input  wire  [hsl_pkg::DQ_W*hsl_pkg::RX_DLY_W-1:0] eye_lo,
   input  wire  [hsl_pkg::DQ_W*hsl_pkg::RX_DLY_W-1:0] eye_hi,
+  input  wire  [hsl_pkg::RT_N*hsl_pkg::RT_W-1:0]      rep_tab,   // repair table (spares)
 
   input  wire  [hsl_pkg::RCA_W-1:0]    pin_rca,
   input  wire  [hsl_pkg::CCA_W-1:0]    pin_cca,
@@ -91,8 +93,10 @@ module dram_channel_behav (
   logic [ROW_W-1:0]  open_row [0:BANK_N-1];
   logic              open_v   [0:BANK_N-1];
   logic [DATA_W-1:0] mem [0:BANK_N-1][0:(1<<ROW_W)-1][0:(1<<COL_W)-1];
+  logic [DATA_W-1:0] spr_mem [0:hsl_pkg::RT_N-1][0:15];   // spares (spare_of)
+  integer            n_spare = 0;   // array accesses that went to a spare
 
-  localparam int NFLT   = 4;
+  localparam int NFLT   = 16;
   localparam int F_NONE = 0;
   localparam int F_SA   = 1;
   localparam int F_TF   = 2;
@@ -123,6 +127,9 @@ module dram_channel_behav (
     end
     for (ib = 0; ib < NFLT; ib = ib + 1) begin
       flt_kind[ib] = F_NONE;
+    end
+    for (ib = 0; ib < hsl_pkg::RT_N; ib = ib + 1) begin
+      for (ic = 0; ic < 16; ic = ic + 1) spr_mem[ib][ic] = '0;
     end
   end
 
@@ -284,12 +291,39 @@ module dram_channel_behav (
   endfunction
 
   // Store w at (b, r, c) through the array faults.
+  // Spare elements: rep_tab entry k (rows first, hsl_pkg format) replaces a
+  // row (spr_mem[k][col]) or one column of a 16-row block (spr_mem[k][row % 16]).
+  // A row spare wins over a column spare. Spares have no faults.
+
+  function automatic integer spare_of(input integer b, input integer r, input integer c);
+    logic [15:0] e;
+    integer k;
+    begin
+      spare_of = -1;
+      for (k = hsl_pkg::RT_N - 1; k >= 0; k = k - 1) begin
+        e = rep_tab[16*k +: 16];
+        if (e[15] && (int'(e[13:12]) == b)) begin
+          if ((k < hsl_pkg::SPR_N) && (int'(e[11:4]) == r)) spare_of = k;
+          if ((k >= hsl_pkg::SPR_N) && (spare_of < 0 || spare_of >= hsl_pkg::SPR_N) &&
+              (int'(e[11:8]) == r / 16) && (int'(e[3:0]) == c)) spare_of = k;
+        end
+      end
+    end
+  endfunction
+
   task automatic array_write(input integer b, input integer r, input integer c,
                              input logic [DATA_W-1:0] w_in);
     logic [DATA_W-1:0] o;
     logic [DATA_W-1:0] w;
     integer f;
+    integer k;
     begin
+      k = spare_of(b, r, c);
+      if (k >= 0) begin
+        spr_mem[k][(k < hsl_pkg::SPR_N) ? c : (r % 16)] = w_in;
+        n_spare = n_spare + 1;
+        return;
+      end
       o = mem[b][r][c];
       w = w_in;
       for (f = 0; f < NFLT; f = f + 1) begin
@@ -320,7 +354,13 @@ module dram_channel_behav (
   function automatic logic [DATA_W-1:0] array_read(input integer b, input integer r, input integer c);
     logic [DATA_W-1:0] x;
     integer f;
+    integer k;
     begin
+      k = spare_of(b, r, c);
+      if (k >= 0) begin
+        n_spare = n_spare + 1;
+        return spr_mem[k][(k < hsl_pkg::SPR_N) ? c : (r % 16)];
+      end
       x = mem[b][r][c];
       for (f = 0; f < NFLT; f = f + 1) begin
         if ((flt_vb[f] == b) && (flt_vr[f] == r) && (flt_vc[f] == c)) begin

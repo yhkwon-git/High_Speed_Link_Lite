@@ -53,6 +53,7 @@ set_input_delay -clock clk 0.5 [get_ports {
   req_addr
   req_wdata
   rsp_ready
+  fz_rdata
 }]
 
 set_output_delay -clock clk 0.5 [get_ports {
@@ -65,6 +66,11 @@ set_output_delay -clock clk 0.5 [get_ports {
   pin_rca
   pin_cca
   rx_dly_code
+  rep_tab
+  fz_addr
+  fz_rd
+  fz_pgm
+  fz_wdata
 }]
 
 # CTRL and REMAP settings that steer the write data (PRBS payload, DBI rule,

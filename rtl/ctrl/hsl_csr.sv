@@ -15,7 +15,8 @@
 // status. MBIST does the same for a March test of the DRAM array; MBIST_LOG
 // and MBIST_BITS read back its first failure and its fail log. RDTRAIN works
 // the same way for read leveling and reads back one lane's result, chosen by
-// [6:4] of the last write (layouts in hsl_pkg).
+// [6:4] of the last write (layouts in hsl_pkg). BIRA, REPAIR and FUSE run the
+// repair analysis, read back the repair table and program / load the fuses.
 // Map: docs/03_microarchitecture.md
 // -----------------------------------------------------------------------------
 `default_nettype none
@@ -55,6 +56,11 @@ module hsl_csr (
   output logic [3:0]  mb_nrows_m1,
   output logic [2:0]  mb_ncl,
   output logic [3:0]  mb_log_sel,
+  output logic        br_start,
+  output logic        br_apply,
+  output logic        rp_clear,
+  output logic        fz_program,
+  output logic        fz_load,
 
   input  wire  [3:0]  train_state,
   input  wire         train_done,
@@ -77,7 +83,18 @@ module hsl_csr (
   input  wire  [hsl_pkg::DATA_W-1:0] mb_first_bits,
   input  wire  [4:0]  mb_log_n,
   input  wire         mb_log_ovf,
-  input  wire  [7:0]  mb_log_entry
+  input  wire  [7:0]  mb_log_entry,
+  input  wire         br_busy,
+  input  wire         br_done,
+  input  wire         br_ok,
+  input  wire  [1:0]  br_rows,
+  input  wire  [1:0]  br_cols,
+  input  wire  [hsl_pkg::RT_N*hsl_pkg::RT_W-1:0] rep_tab,
+  input  wire         fz_busy,
+  input  wire         fz_loaded,
+  input  wire  [3:0]  fz_ce,
+  input  wire  [3:0]  fz_ue,
+  input  wire  [hsl_pkg::RT_N-1:0] fz_drop
 );
   import hsl_pkg::*;
 
@@ -86,6 +103,7 @@ module hsl_csr (
   logic [31:0] lb_status;
   logic [31:0] rt_status;
   logic [2:0]  rt_sel;
+  logic [1:0]  rp_sel;
   logic        lb_single;
   logic [3:0]  lb_fail_lane;
   logic [31:0] rdata_d;
@@ -115,6 +133,12 @@ module hsl_csr (
       mb_nrows_m1 <= '0;
       mb_ncl      <= '0;
       mb_log_sel  <= '0;
+      br_start    <= 1'b0;
+      br_apply    <= 1'b0;
+      rp_clear    <= 1'b0;
+      fz_program  <= 1'b0;
+      fz_load     <= 1'b0;
+      rp_sel      <= '0;
     end else begin
       train_start <= 1'b0;
       zq_done     <= 1'b0;
@@ -125,6 +149,11 @@ module hsl_csr (
       lb_start    <= 1'b0;
       rt_start    <= 1'b0;
       mb_start    <= 1'b0;
+      br_start    <= 1'b0;
+      br_apply    <= 1'b0;
+      rp_clear    <= 1'b0;
+      fz_program  <= 1'b0;
+      fz_load     <= 1'b0;
       if (cfg_we) begin
         case (cfg_addr)
           CSR_CTRL: ctrl <= cfg_wdata[7:0] & 8'hDF;
@@ -159,6 +188,16 @@ module hsl_csr (
             mb_ncl      <= cfg_wdata[22:20];
           end
           CSR_MBIST_LOG: mb_log_sel <= cfg_wdata[3:0];
+          CSR_BIRA: begin
+            br_start <= cfg_wdata[0];
+            br_apply <= cfg_wdata[1];
+            rp_clear <= cfg_wdata[2];
+          end
+          CSR_REPAIR: rp_sel <= cfg_wdata[1:0];
+          CSR_FUSE: begin
+            fz_program <= cfg_wdata[0];
+            fz_load    <= cfg_wdata[1];
+          end
           default: ;
         endcase
       end
@@ -228,6 +267,9 @@ module hsl_csr (
                                 mb_done && (mb_fail_cnt == 16'h0), mb_done, mb_busy};
       CSR_MBIST_LOG: rdata_d = {4'h0, mb_log_sel, mb_log_entry, 2'h0, mb_first_addr};
       CSR_MBIST_BITS: rdata_d = mb_first_bits;
+      CSR_BIRA:      rdata_d = {24'h0, br_cols, br_rows, 1'b0, br_ok, br_done, br_busy};
+      CSR_REPAIR:    rdata_d = {14'h0, rp_sel, rep_tab[RT_W*rp_sel +: RT_W]};
+      CSR_FUSE:      rdata_d = {16'h0, 4'(fz_drop), fz_ue, fz_ce, 2'b00, fz_loaded, fz_busy};
       default:       rdata_d = 32'h0;
     endcase
   end
