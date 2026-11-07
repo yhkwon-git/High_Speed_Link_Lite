@@ -9,14 +9,14 @@ Base die 디지털 한 슬라이스. 호스트에서 본 제어 버스와 명령
 ## 기능
 
 1. 리셋 해제 후 트레이닝 시퀀스를 끝내기 전에는 호스트 명령을 받지 않는다.
-2. 트레이닝 순서는 RESET, CKE, MRS, ZQ 대기, write leveling, read leveling, deskew, write training, MISSION이다.
+2. 트레이닝 순서는 RESET, CKE, MRS, ZQ 대기, write leveling, read leveling, deskew, write training, MISSION이다. read leveling은 레인마다 지연선 코드를 스윕해 통과 구간의 중앙을 고를 수 있어야 한다.
 3. MISSION 이후 ACT, PRE, RD, WR, REF를 받는다. NOP, PREA, REFA, MRS, PDE, PDX 인코딩은 예약해 둔다.
 4. RD 응답은 버스트 하나다. 응답이 준비되기 전에는 `rsp_valid`가 0이다.
 5. 루프백 모드에서는 DRAM 대신 TX 쪽 버스트를 RX로 되돌릴 수 있어야 한다.
 6. 레인 리페어 레지스터로 고장 핀 하나(DQ 또는 DBI)를 건너뛰고 리던던트 핀까지 레인을 한 칸씩 옮길 수 있어야 한다. 고장 레인은 칩 안의 BIST로 찾을 수 있어야 한다.
 7. 호스트는 ID, 버전, 트레이닝 상태, 에러 카운트를 읽을 수 있어야 한다.
 
-E2 이후 구현은 1–7을 스터디 범위 안에서 만족한다. 5번은 병렬 루프백이다. 루프백이 켜진 동안 마지막으로 보낸 WR 버스트를 다음 RD가 핀을 보지 않고 돌려준다. ZQ, write leveling, read leveling, deskew는 done 펄스가 오기 전에는 그 상태에 머문다. REF는 인코딩만 있고 스케줄러가 발행하지 않는다. 큐에 넣으면 head를 막으므로 v0.1 호스트는 REF를 보내지 않는다.
+E2 이후 구현은 1–7을 스터디 범위 안에서 만족한다. 5번은 병렬 루프백이다. 루프백이 켜진 동안 마지막으로 보낸 WR 버스트를 다음 RD가 핀을 보지 않고 돌려준다. ZQ, write leveling, read leveling, deskew는 done 펄스가 오기 전에는 그 상태에 머문다. read leveling의 알고리즘은 `hsl_rd_train`이고 MISSION에서 CSR로 돌린다. REF는 인코딩만 있고 스케줄러가 발행하지 않는다. 큐에 넣으면 head를 막으므로 v0.1 호스트는 REF를 보내지 않는다.
 
 ## 스터디 파라미터
 

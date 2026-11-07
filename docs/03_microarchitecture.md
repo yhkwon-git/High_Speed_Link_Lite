@@ -7,6 +7,7 @@ hsl_base_die_lite
   hsl_rst_sync
   hsl_csr
   hsl_training_fsm
+  hsl_rd_train
   hsl_mc_top
     hsl_cmd_queue
     hsl_bank_fsm x4
@@ -49,6 +50,7 @@ hsl_base_die_lite
 | `0x1C` | TIMING0 | RW | 패키지 기본값 | `{tCCD, tRAS, tRP, tRCD}` |
 | `0x20` | TIMING1 | RW | 패키지 기본값 | `{tRFC, tRTP, tWR, tWTR}` |
 | `0x24` | LANE_BIST | RW | 0 | 쓰기 `[0]` start, `[5:4]` bank, `[15:8]` row. 읽기 `[0]` busy, `[1]` done, `[2]` pass, `[3]` 한 레인만 실패, `[7:4]` 가장 낮은 실패 레인, `[15:8]` DQ 레인별 에러, `[20:16]` 불일치 버스트 수 |
+| `0x28` | RDTRAIN | RW | 0 | 쓰기 `[0]` start, `[6:4]` 읽어 볼 레인. 읽기 `[0]` busy, `[1]` done, `[2]` 모든 레인에서 eye 찾음, `[6:4]` 레인, `[12:8]` 그 레인의 코드, `[20:16]` eye 시작, `[29:24]` eye 폭 |
 
 각 필드는 8비트이고, 오른쪽이 LSB다. tRCD와 tWTR이 `[7:0]`에 있다.
 
