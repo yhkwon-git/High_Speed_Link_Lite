@@ -16,7 +16,7 @@ GROUPS = [
     ('PHY digital', ('hsl_phy_top', 'hsl_phy_mis', 'hsl_dbi', 'hsl_lane_shift', 'hsl_tx_gear',
                      'hsl_cdc_fifo', 'hsl_phy_clk')),
     ('Read leveling (hsl_rd_train)', ('hsl_rd_train',)),
-    ('DFT', ('hsl_dft_top', 'hsl_prbs', 'hsl_loopback', 'hsl_err_cnt', 'hsl_lane_bist')),
+    ('DFT', ('hsl_dft_top', 'hsl_prbs', 'hsl_loopback', 'hsl_err_cnt', 'hsl_lane_bist', 'hsl_mbist')),
     ('CSR', ('hsl_csr',)),
     ('Other (top, training FSM, reset sync)', ('hsl_base_die_lite', 'hsl_training_fsm', 'hsl_rst_sync')),
 ]

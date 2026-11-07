@@ -23,9 +23,9 @@
 // only then do commands reach the pins, and a read sent with the PHY off
 // would never be answered. Change phy_en or loopback with the controller idle.
 //
-// Lane BIST: while it runs it owns the request port. req_ready and rsp_valid
-// to the host are held at 0 and the BIST takes every response, so start it
-// with the host quiet and every response taken.
+// Test engines (lane BIST, MBIST): while one runs it owns the request port.
+// req_ready and rsp_valid to the host are held at 0 and the engine takes every
+// response, so start it with the host quiet and every response taken.
 //
 // Read leveling (hsl_rd_train) sweeps the per-lane delay codes on rx_dly_code,
 // which go to the analog delay lines outside this block, and runs the lane
@@ -103,9 +103,18 @@ module hsl_base_die_lite (
   logic lb_start, lb_busy, lb_done;
   logic [1:0] lb_bank;
   logic [7:0] lb_row;
-  logic                        lb_req_valid, lb_req_write;
-  logic [hsl_pkg::ADDR_W-1:0]  lb_req_addr;
-  logic [hsl_pkg::DATA_W-1:0]  lb_req_wdata;
+  logic                        tp_busy, tp_req_valid, tp_req_write;
+  logic [hsl_pkg::ADDR_W-1:0]  tp_req_addr;
+  logic [hsl_pkg::DATA_W-1:0]  tp_req_wdata;
+  logic mb_start, mb_busy, mb_done, mb_log_ovf;
+  logic [1:0] mb_algo, mb_bank;
+  logic [7:0] mb_row0, mb_log_entry;
+  logic [3:0] mb_nrows_m1, mb_log_sel;
+  logic [2:0] mb_ncl;
+  logic [15:0] mb_fail_cnt;
+  logic [hsl_pkg::ADDR_W-1:0] mb_first_addr;
+  logic [hsl_pkg::DATA_W-1:0] mb_first_bits;
+  logic [4:0] mb_log_n;
   logic [7:0] lb_lane_err;
   logic [4:0] lb_err_bursts;
   logic rt_start, rt_bist_start, rt_busy, rt_done, rt_ok;
@@ -162,7 +171,22 @@ module hsl_base_die_lite (
     .rt_ok        (rt_ok),
     .rt_code      (rx_dly_code),
     .rt_lo        (rt_lo),
-    .rt_len       (rt_len)
+    .rt_len       (rt_len),
+    .mb_start     (mb_start),
+    .mb_algo      (mb_algo),
+    .mb_bank      (mb_bank),
+    .mb_row0      (mb_row0),
+    .mb_nrows_m1  (mb_nrows_m1),
+    .mb_ncl       (mb_ncl),
+    .mb_log_sel   (mb_log_sel),
+    .mb_busy      (mb_busy),
+    .mb_done      (mb_done),
+    .mb_fail_cnt  (mb_fail_cnt),
+    .mb_first_addr(mb_first_addr),
+    .mb_first_bits(mb_first_bits),
+    .mb_log_n     (mb_log_n),
+    .mb_log_ovf   (mb_log_ovf),
+    .mb_log_entry (mb_log_entry)
   );
 
   hsl_rd_train u_rd_train (
@@ -196,15 +220,16 @@ module hsl_base_die_lite (
     .cke          (cke)
   );
 
-  // The request port is the lane BIST's while it runs, the host's otherwise.
+  // The request port belongs to a test engine (lane BIST or MBIST) while one
+  // runs, to the host otherwise.
   assign port_open    = mission_mode && phy_en;
-  assign mc_req_valid = port_open && (lb_busy ? lb_req_valid : req_valid);
-  assign mc_req_write = lb_busy ? lb_req_write : req_write;
-  assign mc_req_addr  = lb_busy ? lb_req_addr  : req_addr;
-  assign mc_req_wdata = lb_busy ? lb_req_wdata : req_wdata;
-  assign mc_rsp_ready = lb_busy ? 1'b1 : rsp_ready;
-  assign req_ready    = port_open && !lb_busy && mc_req_ready;
-  assign rsp_valid    = mc_rsp_valid && !lb_busy;
+  assign mc_req_valid = port_open && (tp_busy ? tp_req_valid : req_valid);
+  assign mc_req_write = tp_busy ? tp_req_write : req_write;
+  assign mc_req_addr  = tp_busy ? tp_req_addr  : req_addr;
+  assign mc_req_wdata = tp_busy ? tp_req_wdata : req_wdata;
+  assign mc_rsp_ready = tp_busy ? 1'b1 : rsp_ready;
+  assign req_ready    = port_open && !tp_busy && mc_req_ready;
+  assign rsp_valid    = mc_rsp_valid && !tp_busy;
   assign rsp_rdata    = mc_rsp_rdata;
   assign rsp_err      = mc_rsp_err;
 
@@ -247,21 +272,37 @@ module hsl_base_die_lite (
     .rx_data       (lb_rx_data),
     .prbs_data     (prbs_data),
     .err_cnt       (err_cnt),
+    .q_empty       (mc_q_empty),
+    .tp_busy       (tp_busy),
+    .tp_req_valid  (tp_req_valid),
+    .tp_req_ready  (port_open && mc_req_ready),
+    .tp_req_write  (tp_req_write),
+    .tp_req_addr   (tp_req_addr),
+    .tp_req_wdata  (tp_req_wdata),
+    .tp_rsp_valid  (mc_rsp_valid),
+    .tp_rsp_rdata  (mc_rsp_rdata),
     .lb_start      (lb_start | rt_bist_start),
     .lb_bank       (lb_bank),
     .lb_row        (lb_row),
-    .lb_q_empty    (mc_q_empty),
     .lb_busy       (lb_busy),
-    .lb_req_valid  (lb_req_valid),
-    .lb_req_ready  (port_open && mc_req_ready),
-    .lb_req_write  (lb_req_write),
-    .lb_req_addr   (lb_req_addr),
-    .lb_req_wdata  (lb_req_wdata),
-    .lb_rsp_valid  (mc_rsp_valid),
-    .lb_rsp_rdata  (mc_rsp_rdata),
     .lb_done       (lb_done),
     .lb_lane_err   (lb_lane_err),
-    .lb_err_bursts (lb_err_bursts)
+    .lb_err_bursts (lb_err_bursts),
+    .mb_start      (mb_start),
+    .mb_algo       (mb_algo),
+    .mb_bank       (mb_bank),
+    .mb_row0       (mb_row0),
+    .mb_nrows_m1   (mb_nrows_m1),
+    .mb_ncl        (mb_ncl),
+    .mb_log_sel    (mb_log_sel),
+    .mb_busy       (mb_busy),
+    .mb_done       (mb_done),
+    .mb_fail_cnt   (mb_fail_cnt),
+    .mb_first_addr (mb_first_addr),
+    .mb_first_bits (mb_first_bits),
+    .mb_log_n      (mb_log_n),
+    .mb_log_ovf    (mb_log_ovf),
+    .mb_log_entry  (mb_log_entry)
   );
 
   hsl_phy_top u_phy (

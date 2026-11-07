@@ -85,6 +85,9 @@ package hsl_pkg;
   localparam logic [7:0] CSR_TIMING1   = 8'h20;
   localparam logic [7:0] CSR_LANE_BIST = 8'h24;
   localparam logic [7:0] CSR_RDTRAIN   = 8'h28;
+  localparam logic [7:0] CSR_MBIST     = 8'h2C;
+  localparam logic [7:0] CSR_MBIST_LOG = 8'h30;
+  localparam logic [7:0] CSR_MBIST_BITS = 8'h34;
 
   localparam int CTRL_SOFT_RST     = 0;
   localparam int CTRL_TRAIN_BYPASS = 1;
@@ -113,6 +116,20 @@ package hsl_pkg;
   //                  [7:4] lowest failing DQ lane, [15:8] DQ lane errors,
   //                  [20:16] bursts with a mismatch.
   localparam int LB_BURSTS = 16; // words written, then read back, per run
+
+  // MBIST: March test of DRAM bank [5:4], rows [15:8] .. +[19:16], columns
+  //        0 .. 2^[22:20]-1, through the controller (hsl_mbist).
+  // MBIST write:      [0] start, [2:1] algorithm (0 MATS+, 1 March X,
+  //                   2 March C-), [5:4] bank, [15:8] first row,
+  //                   [19:16] rows - 1, [22:20] log2 columns (0..4)
+  // MBIST read:       [0] busy, [1] done, [2] pass, [3] fail log overflow,
+  //                   [8:4] failing words in the log, [31:16] failing reads
+  // MBIST_LOG write:  [3:0] fail log entry to read back
+  // MBIST_LOG read:   [13:0] host address of the first failing read,
+  //                   [23:16] the selected entry {row offset, column},
+  //                   [27:24] its index
+  // MBIST_BITS read:  bits that differed in the first failing read
+  localparam int MB_LOG_N = 16;
 
   // Read leveling: one delay-line code per DQ lane toward the analog PHY.
   // RDTRAIN write: [0] start, [6:4] lane to read back.

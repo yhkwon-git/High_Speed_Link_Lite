@@ -25,5 +25,6 @@ rtl/dft/hsl_prbs.sv
 rtl/dft/hsl_loopback.sv
 rtl/dft/hsl_err_cnt.sv
 rtl/dft/hsl_lane_bist.sv
+rtl/dft/hsl_mbist.sv
 rtl/dft/hsl_dft_top.sv
 rtl/top/hsl_base_die_lite.sv

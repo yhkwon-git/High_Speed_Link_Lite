@@ -14,6 +14,9 @@
 //   T11    read leveling against per-lane eyes
 //   T12    mission datapath: the old 16 WR + 16 RD pattern, one read, a read
 //          stream, DBI-AC with a repaired lane, channel-model checks
+//   T13    MBIST: 24 array faults x MATS+ / March X / March C- against the
+//          reference detection table, the fail log and its overflow, one
+//          BIST engine at a time
 // Every host response is checked against a reference memory (scoreboard).
 // Controller half-period is CTRL_PERIOD_PS/2 = 625 ps (800 MHz).
 `timescale 1ns/100fs
@@ -136,9 +139,13 @@ module tb_hsl_smoke;
   integer            rsp_n   = 0;
   integer            rsp_cyc = 0;
   integer            tb_cyc  = 0;
+  integer            mb_cyc  = 0;   // clocks with the MBIST busy (T13)
+  integer            both_cyc = 0;  // clocks with both test engines busy (T13)
 
   always @(posedge clk) begin
     tb_cyc <= tb_cyc + 1;
+    if (dut.u_dft.u_mbist.busy === 1'b1) mb_cyc <= mb_cyc + 1;
+    if ((dut.u_dft.lb_busy === 1'b1) && (dut.u_dft.mb_busy === 1'b1)) both_cyc <= both_cyc + 1;
     if (req_valid && req_ready) begin
       sb_rd[sb_wp % SBN]  <= !req_write;
       sb_chk[sb_wp % SBN] <= sb_on && !req_write && ref_ok[req_addr];
@@ -430,7 +437,7 @@ module tb_hsl_smoke;
       expect_eq(rdata, TIMING0_DEFAULT, 3);
       csr_read(CSR_TIMING1, rdata);
       expect_eq(rdata, TIMING1_DEFAULT, 4);
-      csr_read(8'h3C, rdata);
+      csr_read(8'hFC, rdata);
       expect_eq(rdata, 32'h0, 5);
       csr_read(CSR_ERRCNT, rdata);
       expect_eq(rdata, 32'h0, 6);
@@ -1595,6 +1602,323 @@ module tb_hsl_smoke;
     end
   endtask
 
+  // ---------------------------------------------------------------------------
+  // T13: MBIST. One fault at a time goes into the channel model's array, and
+  // each March algorithm runs on an 8-word region (bank 2, row C0, columns
+  // 0-7). It must catch exactly the faults the reference simulator
+  // (tb/march_ref.py) says it catches, with the first failure at the victim
+  // word and bit. Then a 4-row region with three faulty words checks the fail
+  // log.
+  // ---------------------------------------------------------------------------
+  localparam logic [1:0] T13_BANK = 2'd2;
+  localparam logic [7:0] T13_ROW  = 8'hC0;
+  localparam int         T13_KV   = 3;   // victim bit
+  localparam int         T13_KA   = 7;   // aggressor bit
+
+  // Faults the reference catches, bit f for fault f below.
+  function automatic logic [31:0] t13_expect(input integer algo);
+    case (algo)
+      0:       t13_expect = 32'h005A26B7;   // MATS+
+      1:       t13_expect = 32'h005E66FF;   // March X
+      default: t13_expect = 32'h00FFFFFF;   // March C-
+    endcase
+  endfunction
+
+  // Fault f: kind (model codes), victim and aggressor word, direction,
+  // forced value, aggressor state, and a name. Words 2 and 5; "a<v" means the
+  // aggressor comes first going up.
+  task automatic t13_fault(input integer f, output integer kind, output integer vw,
+                           output integer aw, output integer dir, output integer val,
+                           output integer st, output string name);
+    integer k;
+    begin
+      dir = 0;
+      val = 0;
+      st  = 0;
+      vw  = 2;
+      aw  = 2;
+      if (f < 4) begin
+        kind = (f < 2) ? 1 : 2;
+        val  = (f == 1) ? 1 : 0;
+        dir  = (f == 2) ? 1 : 0;
+        case (f)
+          0: name = "SA0";
+          1: name = "SA1";
+          2: name = "TF up";
+          default: name = "TF down";
+        endcase
+      end else begin
+        if (f < 8) begin
+          k    = f - 4;
+          kind = 3;
+          dir  = (k < 2) ? 1 : 0;
+          if (dir == 1) name = "CFin up";
+          else          name = "CFin down";
+        end else if (f < 16) begin
+          k    = f - 8;
+          kind = 4;
+          dir  = (k < 4) ? 1 : 0;
+          val  = (k / 2) % 2;
+          if (dir == 1) name = $sformatf("CFid up->%0d", val);
+          else          name = $sformatf("CFid down->%0d", val);
+        end else begin
+          k    = f - 16;
+          kind = 5;
+          st   = (k < 4) ? 0 : 1;
+          val  = (k / 2) % 2;
+          name = $sformatf("CFst <%0d;%0d>", st, val);
+        end
+        if ((k % 2) == 0) begin
+          aw = 2;
+          vw = 5;
+          name = {name, " a<v"};
+        end else begin
+          aw = 5;
+          vw = 2;
+          name = {name, " a>v"};
+        end
+      end
+    end
+  endtask
+
+  task automatic clear_faults();
+    integer f;
+    begin
+      for (f = 0; f < 4; f = f + 1) u_dram.flt_kind[f] = 0;
+    end
+  endtask
+
+  // Fault entry f on the model's array; cells by host address (XOR map).
+  task automatic set_fault(input integer f, input integer kind, input logic [ADDR_W-1:0] va,
+                           input integer vk, input logic [ADDR_W-1:0] aa, input integer ak,
+                           input integer dir, input integer val, input integer st);
+    begin
+      u_dram.flt_vb[f]   = {30'd0, va[5:4] ^ va[7:6]};
+      u_dram.flt_vr[f]   = int'(va[13:6]);
+      u_dram.flt_vc[f]   = int'(va[3:0]);
+      u_dram.flt_vk[f]   = vk;
+      u_dram.flt_ab[f]   = {30'd0, aa[5:4] ^ aa[7:6]};
+      u_dram.flt_ar[f]   = int'(aa[13:6]);
+      u_dram.flt_ac[f]   = int'(aa[3:0]);
+      u_dram.flt_ak[f]   = ak;
+      u_dram.flt_dir[f]  = dir;
+      u_dram.flt_val[f]  = val;
+      u_dram.flt_s[f]    = st;
+      u_dram.flt_kind[f] = kind;
+    end
+  endtask
+
+  // Zero the test rows in the model (backdoor), so every run starts from the
+  // all-zero array the reference starts from.
+  task automatic t13_zero(input integer nrows);
+    integer r;
+    integer c;
+    begin
+      for (r = 0; r < nrows; r = r + 1) begin
+        for (c = 0; c < 16; c = c + 1) begin
+          u_dram.mem[T13_BANK][int'(T13_ROW) + r][c] = '0;
+        end
+      end
+    end
+  endtask
+
+  // Start a run and poll the status until done; cyc = clocks the engine was busy.
+  task automatic mbist_run(input integer algo, input integer nrows_m1, input integer ncl,
+                           output logic [31:0] st, output integer cyc);
+    integer guard;
+    integer c0;
+    begin
+      c0 = mb_cyc;
+      csr_write(CSR_MBIST, {9'h0, 3'(ncl), 4'(nrows_m1), T13_ROW, 2'b00, T13_BANK, 1'b0,
+                            2'(algo), 1'b1});
+      guard = 0;
+      st = '0;
+      while (((st[0] === 1'b1) || (st[1] !== 1'b1)) && (guard < 20000)) begin
+        csr_read(CSR_MBIST, st);
+        guard = guard + 1;
+      end
+      cyc = mb_cyc - c0;
+    end
+  endtask
+
+  task automatic run_t13();
+    integer      t13bad;
+    integer      f;
+    integer      algo;
+    integer      kind;
+    integer      vw;
+    integer      aw;
+    integer      dir;
+    integer      val;
+    integer      st_a;
+    integer      hits [0:2];
+    integer      ncyc [0:2];
+    integer      cyc;
+    integer      c0;
+    integer      guard;
+    logic        det;
+    logic [31:0] expm;
+    logic [31:0] lb;
+    logic [31:0] st;
+    logic [31:0] lg;
+    logic [31:0] bits;
+    string       name;
+    string       line;
+    begin
+      t13bad = 0;
+      for (algo = 0; algo < 3; algo = algo + 1) hits[algo] = 0;
+      soft_reset();
+      arm_mission(32'h0);
+
+      // No fault: every algorithm passes.
+      clear_faults();
+      for (algo = 0; algo < 3; algo = algo + 1) begin
+        t13_zero(1);
+        mbist_run(algo, 0, 3, st, ncyc[algo]);
+        if ((st[2:0] !== 3'b110) || (st[31:16] !== 16'h0)) begin
+          $display("[T13] no fault, algorithm %0d: status %h", algo, st);
+          t13bad = t13bad + 1;
+        end
+      end
+      $display("[T13] no fault, 8 words: MATS+ 40 ops in %0d clocks, March X 48 in %0d, March C- 80 in %0d",
+               ncyc[0], ncyc[1], ncyc[2]);
+
+      $display("[T13] fault                MATS+  March X  March C-");
+      for (f = 0; f < 24; f = f + 1) begin
+        t13_fault(f, kind, vw, aw, dir, val, st_a, name);
+        line = "";
+        for (algo = 0; algo < 3; algo = algo + 1) begin
+          clear_faults();
+          set_fault(0, kind, host_addr(T13_BANK, T13_ROW, 4'(vw)), T13_KV,
+                    host_addr(T13_BANK, T13_ROW, 4'(aw)), T13_KA, dir, val, st_a);
+          t13_zero(1);
+          mbist_run(algo, 0, 3, st, cyc);
+          det  = (st[1] === 1'b1) && (st[2] === 1'b0);
+          expm = t13_expect(algo);
+          if (det !== expm[f]) begin
+            $display("[T13] %s, algorithm %0d: detected %b, reference %b (status %h)", name, algo,
+                     det, expm[f], st);
+            t13bad = t13bad + 1;
+          end
+          if (det) begin
+            hits[algo] = hits[algo] + 1;
+            csr_read(CSR_MBIST_LOG, lg);
+            csr_read(CSR_MBIST_BITS, bits);
+            if ((lg[13:0] !== host_addr(T13_BANK, T13_ROW, 4'(vw))) ||
+                (bits !== (32'h1 << T13_KV))) begin
+              $display("[T13] %s, algorithm %0d: first fail at %h bits %h", name, algo, lg[13:0], bits);
+              t13bad = t13bad + 1;
+            end
+          end
+          if (det) line = {line, "      Y"};
+          else     line = {line, "      -"};
+        end
+        while (name.len() < 22) name = {name, " "};
+        $display("[T13] %s%s", name, line);
+      end
+      clear_faults();
+
+      // Fail log: rows C0-C3, 16 columns, March C-. SA1 at (row +0, column 3),
+      // SA0 at (+2, 9), TF up at (+3, 15): three words, logged in the order
+      // their first failing read comes.
+      set_fault(0, 1, host_addr(T13_BANK, T13_ROW, 4'd3), 0, host_addr(T13_BANK, T13_ROW, 4'd3), 0, 0, 1, 0);
+      set_fault(1, 1, host_addr(T13_BANK, T13_ROW + 8'd2, 4'd9), 5,
+                host_addr(T13_BANK, T13_ROW + 8'd2, 4'd9), 5, 0, 0, 0);
+      set_fault(2, 2, host_addr(T13_BANK, T13_ROW + 8'd3, 4'd15), 31,
+                host_addr(T13_BANK, T13_ROW + 8'd3, 4'd15), 31, 1, 0, 0);
+      t13_zero(4);
+      mbist_run(2, 3, 4, st, cyc);
+      // Failing reads: the SA1 word fails every r0 (3), the SA0 word every r1
+      // (2), the TF word both r1 after a w1 that did not take (2).
+      if ((st[1] !== 1'b1) || (st[2] !== 1'b0) || (st[3] !== 1'b0) || (st[8:4] !== 5'd3) ||
+          (st[31:16] !== 16'd7)) begin
+        $display("[T13] fail log run: status %h", st);
+        t13bad = t13bad + 1;
+      end
+      for (f = 0; f < 3; f = f + 1) begin
+        csr_write(CSR_MBIST_LOG, 32'(f));
+        csr_read(CSR_MBIST_LOG, lg);
+        if (lg[23:16] !== ((f == 0) ? 8'h03 : ((f == 1) ? 8'h29 : 8'h3F))) begin
+          $display("[T13] fail log entry %0d: %h", f, lg[23:16]);
+          t13bad = t13bad + 1;
+        end
+      end
+      $display("[T13] fail log: 3 words of 64 (%0d failing reads), entries {row,col} 03 29 3F; March C- on 64 words: 640 ops in %0d clocks",
+               st[31:16], cyc);
+      clear_faults();
+
+      // DQ pin 5 stuck at 1 on the link: every r0 fails (3 per word, 192),
+      // so the log fills with the first 16 words and sets overflow.
+      fault_mask = 10'(1) << 5;
+      fault_val  = fault_mask;
+      t13_zero(4);
+      mbist_run(2, 3, 4, st, cyc);
+      csr_write(CSR_MBIST_LOG, 32'd15);
+      csr_read(CSR_MBIST_LOG, lg);
+      csr_read(CSR_MBIST_BITS, bits);
+      fault_mask = '0;
+      fault_val  = '0;
+      if ((st[2] !== 1'b0) || (st[3] !== 1'b1) || (st[8:4] !== 5'd16) || (st[31:16] !== 16'd192) ||
+          (lg[23:16] !== 8'h0F) || (lg[13:0] !== host_addr(T13_BANK, T13_ROW, 4'd0)) ||
+          (bits !== 32'h20202020)) begin
+        $display("[T13] stuck DQ pin: status %h log %h bits %h", st, lg, bits);
+        t13bad = t13bad + 1;
+      end
+      $display("[T13] DQ pin 5 stuck at 1: %0d failing reads, log full (%0d) with overflow, first bits %h",
+               st[31:16], st[8:4], bits);
+
+      // One engine at a time: a lane BIST start that comes while the MBIST
+      // runs waits for it, and so does an MBIST start during a lane BIST run.
+      // Both runs finish and pass, and the two are never busy together.
+      c0 = both_cyc;
+      t13_zero(1);
+      csr_write(CSR_MBIST, {9'h0, 3'd3, 4'd0, T13_ROW, 2'b00, T13_BANK, 1'b0, 2'd2, 1'b1});
+      csr_write(CSR_LANE_BIST, {16'h0, T13_ROW + 8'd8, 2'b00, T13_BANK, 3'b000, 1'b1});
+      guard = 0;
+      lb = '0;
+      while (((lb[0] === 1'b1) || (lb[1] !== 1'b1)) && (guard < 20000)) begin
+        csr_read(CSR_LANE_BIST, lb);
+        guard = guard + 1;
+      end
+      csr_read(CSR_MBIST, st);
+      if ((st[2:0] !== 3'b110) || (lb[2:0] !== 3'b110)) begin
+        $display("[T13] lane BIST start during MBIST: MBIST %h, lane BIST %h", st, lb);
+        t13bad = t13bad + 1;
+      end
+      t13_zero(1);
+      cyc = mb_cyc;
+      csr_write(CSR_LANE_BIST, {16'h0, T13_ROW + 8'd8, 2'b00, T13_BANK, 3'b000, 1'b1});
+      csr_write(CSR_MBIST, {9'h0, 3'd3, 4'd0, T13_ROW, 2'b00, T13_BANK, 1'b0, 2'd2, 1'b1});
+      guard = 0;
+      lb = '0;
+      while (((lb[0] === 1'b1) || (lb[1] !== 1'b1)) && (guard < 20000)) begin
+        csr_read(CSR_LANE_BIST, lb);
+        guard = guard + 1;
+      end
+      guard = 0;
+      st = 32'h1;
+      while (((st[0] === 1'b1) || (st[1] !== 1'b1)) && (guard < 20000)) begin
+        csr_read(CSR_MBIST, st);
+        guard = guard + 1;
+      end
+      if ((lb[2:0] !== 3'b110) || (st[2:0] !== 3'b110) || (mb_cyc == cyc) || (both_cyc != c0)) begin
+        $display("[T13] MBIST start during lane BIST: lane BIST %h, MBIST %h, MBIST ran %0d clocks, overlap %0d",
+                 lb, st, mb_cyc - cyc, both_cyc - c0);
+        t13bad = t13bad + 1;
+      end
+      $display("[T13] a start during the other engine's run waits for it: both orders ran and passed, %0d clocks with both busy",
+               both_cyc - c0);
+
+      $display("[T13] detected: MATS+ %0d/24, March X %0d/24, March C- %0d/24 (reference 13, 17, 24)",
+               hits[0], hits[1], hits[2]);
+      if (t13bad == 0) begin
+        $display("[T13] PASS");
+      end else begin
+        errors = errors + t13bad;
+      end
+    end
+  endtask
+
   initial begin
     errors = 0;
     // block_errors is driven by the u_blocks output port only.
@@ -1647,6 +1971,7 @@ module tb_hsl_smoke;
     run_t10();
     run_t11();
     run_t12();
+    run_t13();
 
     if (sb_err != 0) begin
       $display("[SB] %0d read mismatches over the run", sb_err);

@@ -12,8 +12,10 @@
 // writes: the timings are the controller's dram_pkg constants. CTRL bit 5
 // (the old phy_bypass) is reserved and reads 0.
 // A write to LANE_BIST with bit 0 set starts a lane test; reads return its
-// status. RDTRAIN works the same way for read leveling and reads back one
-// lane's result, chosen by [6:4] of the last write (layouts in hsl_pkg).
+// status. MBIST does the same for a March test of the DRAM array; MBIST_LOG
+// and MBIST_BITS read back its first failure and its fail log. RDTRAIN works
+// the same way for read leveling and reads back one lane's result, chosen by
+// [6:4] of the last write (layouts in hsl_pkg).
 // Map: docs/03_microarchitecture.md
 // -----------------------------------------------------------------------------
 `default_nettype none
@@ -46,6 +48,13 @@ module hsl_csr (
   output logic [1:0]  lb_bank,
   output logic [7:0]  lb_row,
   output logic        rt_start,
+  output logic        mb_start,
+  output logic [1:0]  mb_algo,
+  output logic [1:0]  mb_bank,
+  output logic [7:0]  mb_row0,
+  output logic [3:0]  mb_nrows_m1,
+  output logic [2:0]  mb_ncl,
+  output logic [3:0]  mb_log_sel,
 
   input  wire  [3:0]  train_state,
   input  wire         train_done,
@@ -60,7 +69,15 @@ module hsl_csr (
   input  wire         rt_ok,
   input  wire  [hsl_pkg::DQ_W*hsl_pkg::RX_DLY_W-1:0] rt_code,
   input  wire  [hsl_pkg::DQ_W*hsl_pkg::RX_DLY_W-1:0] rt_lo,
-  input  wire  [hsl_pkg::DQ_W*6-1:0]                 rt_len
+  input  wire  [hsl_pkg::DQ_W*6-1:0]                 rt_len,
+  input  wire         mb_busy,
+  input  wire         mb_done,
+  input  wire  [15:0] mb_fail_cnt,
+  input  wire  [hsl_pkg::ADDR_W-1:0] mb_first_addr,
+  input  wire  [hsl_pkg::DATA_W-1:0] mb_first_bits,
+  input  wire  [4:0]  mb_log_n,
+  input  wire         mb_log_ovf,
+  input  wire  [7:0]  mb_log_entry
 );
   import hsl_pkg::*;
 
@@ -91,6 +108,13 @@ module hsl_csr (
       lb_row      <= '0;
       rt_start    <= 1'b0;
       rt_sel      <= '0;
+      mb_start    <= 1'b0;
+      mb_algo     <= '0;
+      mb_bank     <= '0;
+      mb_row0     <= '0;
+      mb_nrows_m1 <= '0;
+      mb_ncl      <= '0;
+      mb_log_sel  <= '0;
     end else begin
       train_start <= 1'b0;
       zq_done     <= 1'b0;
@@ -100,6 +124,7 @@ module hsl_csr (
       err_clear   <= 1'b0;
       lb_start    <= 1'b0;
       rt_start    <= 1'b0;
+      mb_start    <= 1'b0;
       if (cfg_we) begin
         case (cfg_addr)
           CSR_CTRL: ctrl <= cfg_wdata[7:0] & 8'hDF;
@@ -125,6 +150,15 @@ module hsl_csr (
             rt_start <= cfg_wdata[0];
             rt_sel   <= cfg_wdata[6:4];
           end
+          CSR_MBIST: begin
+            mb_start    <= cfg_wdata[0];
+            mb_algo     <= cfg_wdata[2:1];
+            mb_bank     <= cfg_wdata[5:4];
+            mb_row0     <= cfg_wdata[15:8];
+            mb_nrows_m1 <= cfg_wdata[19:16];
+            mb_ncl      <= cfg_wdata[22:20];
+          end
+          CSR_MBIST_LOG: mb_log_sel <= cfg_wdata[3:0];
           default: ;
         endcase
       end
@@ -190,6 +224,10 @@ module hsl_csr (
       CSR_TIMING1:   rdata_d = TIMING1_DEFAULT;
       CSR_LANE_BIST: rdata_d = lb_status;
       CSR_RDTRAIN:   rdata_d = rt_status;
+      CSR_MBIST:     rdata_d = {mb_fail_cnt, 7'h0, mb_log_n, mb_log_ovf,
+                                mb_done && (mb_fail_cnt == 16'h0), mb_done, mb_busy};
+      CSR_MBIST_LOG: rdata_d = {4'h0, mb_log_sel, mb_log_entry, 2'h0, mb_first_addr};
+      CSR_MBIST_BITS: rdata_d = mb_first_bits;
       default:       rdata_d = 32'h0;
     endcase
   end

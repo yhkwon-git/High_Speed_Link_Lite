@@ -38,6 +38,19 @@
 // shift as rtl/phy/hsl_lane_shift.sv (pin k idles, lanes from k up use the
 // next pin, RED carries the last one), written again as loops here.
 //
+// Array faults (for MBIST): up to NFLT bit-level faults set by the testbench in
+// flt_* below, on one victim cell and, for coupling faults, one aggressor cell
+// in another word:
+//   SA    the victim bit reads and stores flt_val
+//   TF    a write that would move the victim bit in direction flt_dir (1 up)
+//         leaves it as it was
+//   CFin  a write that moves the aggressor bit in direction flt_dir inverts
+//         the victim bit
+//   CFid  the same transition forces the victim bit to flt_val
+//   CFst  while the aggressor bit is flt_s, the victim bit reads flt_val
+// The array starts at all zeros. tb/march_ref.py implements the same rules in a
+// reference March simulator; it gives the expected MBIST detection table (T13).
+//
 // Read eye: rx_dly is the chip's delay-line code per DQ lane. Inside
 // [eye_lo, eye_hi] a lane samples its own UI; before the window it samples
 // the UI before, after the window the UI after (0 outside the burst, where the
@@ -78,6 +91,40 @@ module dram_channel_behav (
   logic [ROW_W-1:0]  open_row [0:BANK_N-1];
   logic              open_v   [0:BANK_N-1];
   logic [DATA_W-1:0] mem [0:BANK_N-1][0:(1<<ROW_W)-1][0:(1<<COL_W)-1];
+
+  localparam int NFLT   = 4;
+  localparam int F_NONE = 0;
+  localparam int F_SA   = 1;
+  localparam int F_TF   = 2;
+  localparam int F_CFIN = 3;
+  localparam int F_CFID = 4;
+  localparam int F_CFST = 5;
+  integer flt_kind [0:NFLT-1];
+  integer flt_vb   [0:NFLT-1];   // victim bank, row, column, bit
+  integer flt_vr   [0:NFLT-1];
+  integer flt_vc   [0:NFLT-1];
+  integer flt_vk   [0:NFLT-1];
+  integer flt_ab   [0:NFLT-1];   // aggressor bank, row, column, bit
+  integer flt_ar   [0:NFLT-1];
+  integer flt_ac   [0:NFLT-1];
+  integer flt_ak   [0:NFLT-1];
+  integer flt_dir  [0:NFLT-1];
+  integer flt_val  [0:NFLT-1];
+  integer flt_s    [0:NFLT-1];
+
+  integer ib, ir, ic;
+  initial begin
+    for (ib = 0; ib < BANK_N; ib = ib + 1) begin
+      for (ir = 0; ir < (1 << ROW_W); ir = ir + 1) begin
+        for (ic = 0; ic < (1 << COL_W); ic = ic + 1) begin
+          mem[ib][ir][ic] = '0;
+        end
+      end
+    end
+    for (ib = 0; ib < NFLT; ib = ib + 1) begin
+      flt_kind[ib] = F_NONE;
+    end
+  end
 
   // Earliest legal cycle per bank, in ccyc (controller clocks at the pins).
   integer ccyc;
@@ -236,6 +283,58 @@ module dram_channel_behav (
     end
   endfunction
 
+  // Store w at (b, r, c) through the array faults.
+  task automatic array_write(input integer b, input integer r, input integer c,
+                             input logic [DATA_W-1:0] w_in);
+    logic [DATA_W-1:0] o;
+    logic [DATA_W-1:0] w;
+    integer f;
+    begin
+      o = mem[b][r][c];
+      w = w_in;
+      for (f = 0; f < NFLT; f = f + 1) begin
+        if ((flt_vb[f] == b) && (flt_vr[f] == r) && (flt_vc[f] == c)) begin
+          if (flt_kind[f] == F_TF) begin
+            if ((flt_dir[f] == 1) && !o[flt_vk[f]] && w[flt_vk[f]]) w[flt_vk[f]] = 1'b0;
+            if ((flt_dir[f] == 0) && o[flt_vk[f]] && !w[flt_vk[f]]) w[flt_vk[f]] = 1'b1;
+          end
+          if (flt_kind[f] == F_SA) w[flt_vk[f]] = (flt_val[f] != 0);
+        end
+      end
+      mem[b][r][c] = w;
+      for (f = 0; f < NFLT; f = f + 1) begin
+        if (((flt_kind[f] == F_CFIN) || (flt_kind[f] == F_CFID)) &&
+            (flt_ab[f] == b) && (flt_ar[f] == r) && (flt_ac[f] == c) &&
+            (o[flt_ak[f]] != w[flt_ak[f]]) && (w[flt_ak[f]] == (flt_dir[f] != 0))) begin
+          if (flt_kind[f] == F_CFIN) begin
+            mem[flt_vb[f]][flt_vr[f]][flt_vc[f]][flt_vk[f]] = ~mem[flt_vb[f]][flt_vr[f]][flt_vc[f]][flt_vk[f]];
+          end else begin
+            mem[flt_vb[f]][flt_vr[f]][flt_vc[f]][flt_vk[f]] = (flt_val[f] != 0);
+          end
+        end
+      end
+    end
+  endtask
+
+  // Word at (b, r, c) as a read sees it through the array faults.
+  function automatic logic [DATA_W-1:0] array_read(input integer b, input integer r, input integer c);
+    logic [DATA_W-1:0] x;
+    integer f;
+    begin
+      x = mem[b][r][c];
+      for (f = 0; f < NFLT; f = f + 1) begin
+        if ((flt_vb[f] == b) && (flt_vr[f] == r) && (flt_vc[f] == c)) begin
+          if (flt_kind[f] == F_SA) x[flt_vk[f]] = (flt_val[f] != 0);
+          if ((flt_kind[f] == F_CFST) &&
+              (mem[flt_ab[f]][flt_ar[f]][flt_ac[f]][flt_ak[f]] == (flt_s[f] != 0))) begin
+            x[flt_vk[f]] = (flt_val[f] != 0);
+          end
+        end
+      end
+      array_read = x;
+    end
+  endfunction
+
   task automatic proto(input string what);
     begin
       if (mis_err < NMSG) begin
@@ -293,8 +392,8 @@ module dram_channel_behav (
         if (wq_head == wq_tail) begin
           proto("write burst with no WR waiting for it");
         end else begin
-          mem[wq_bank[wq_head % QN]][wq_row[wq_head % QN]][wq_col[wq_head % QN]] =
-            burst_in(wdone_pins, mr_repair_en, mr_repair_lane);
+          array_write(int'(wq_bank[wq_head % QN]), int'(wq_row[wq_head % QN]),
+                      int'(wq_col[wq_head % QN]), burst_in(wdone_pins, mr_repair_en, mr_repair_lane));
           wq_head = wq_head + 1;
         end
       end
@@ -337,7 +436,7 @@ module dram_channel_behav (
             if (rq_tail - rq_head >= QN) begin
               proto("read queue overflow");
             end
-            rq_word[rq_tail % QN] = mem[cbank][open_row[cbank]][ccol];
+            rq_word[rq_tail % QN] = array_read(int'(cbank), int'(open_row[cbank]), int'(ccol));
             rq_due[rq_tail % QN]  = rcyc + RL_RDQS;
             rq_tail = rq_tail + 1;
             p_at = imax(pre_at[cbank], ccyc + tRTP);
