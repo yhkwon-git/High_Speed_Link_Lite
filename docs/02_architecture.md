@@ -47,6 +47,8 @@ beats_per_burst = BL / DDR_BITS = 2
 
 E7 이후 시뮬레이션과 SDC는 이 식과 같다. 컨트롤러 반주기는 625 ps, PHY 반주기는 312.5 ps다. 패키지 상수, 테스트벤치, `hsl_phy_clk`, SDC의 대조는 `docs/e12_clocks.md`다. 이 숫자를 JEDEC 핀 속도로 말하지 않는다.
 
+칩 STA(`8af801b`, Nangate45 typical, 이상 클럭)에서 HSL 로직은 800 MHz, 1.6 GHz, RDQS를 모두 통과한다. 컨트롤러는 2.14 ns(467 MHz)에서 닫힌다. 한 클럭에 명령을 고르고 모든 타이머를 갱신하는 루프가 그 경로다. 이 라이브러리에서 800 MHz 명령률을 지키려면 DFI 1 : 2(컨트롤러 400 MHz, 클럭마다 명령 슬롯 두 개)가 맞는 방향이다. 자세한 경로와 선택지는 README의 STA 절과 `docs/05_pd_guide.md`에 있다.
+
 ## 메모리 컨트롤러
 
 컨트롤러는 Mini DRAM Controller v4 RTL(`rtl/mc/`)을 파일 그대로 쓴다. 읽기 8 · 쓰기 8 큐에서 FR-FCFS로 고르고(열린 row에 맞는 요청 먼저, 같으면 오래된 것), 행 명령과 열 명령을 매 클럭 하나씩 낸다. 쓰기는 받은 즉시 응답하고 쓰기 배치(WR_HI 6 / WR_LO 2)로 모아 내며, 쓰기 큐에 있는 주소의 읽기는 큐에서 답한다. refresh는 per-bank(REFpb)로 tREFI/4마다 한 뱅크씩 내고, 뱅크마다 ACT를 세어 RFM을 낸다. 컨트롤러 단독 검증과 구조 비교(큐 깊이, 명령 버스 수, refresh 방식, 주소 맵)는 그 저장소에 있다.

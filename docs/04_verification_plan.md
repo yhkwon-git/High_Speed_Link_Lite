@@ -54,3 +54,4 @@
 - 비교는 `!==`/`===`로 한다. X나 Z가 나오면 통과가 아니라 실패다.
 - 리셋은 클럭 negedge에서 푼다. posedge와 같은 시각에 풀면 첫 싱크러나이저 플롭과 레이스가 생긴다.
 - 요청은 negedge에서 내고 1 ps 뒤 `req_ready`를 본다. `req_ready`는 posedge에서만 바뀌므로 그 값이 다음 posedge의 수락 여부다.
+- CSR 읽기는 negedge에 주소를 내고 다음 posedge 뒤에 `cfg_rdata`를 읽는다(읽기 데이터 레지스터).
