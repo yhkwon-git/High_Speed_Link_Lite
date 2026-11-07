@@ -17,7 +17,7 @@ GROUPS = [
                      'hsl_cdc_fifo', 'hsl_phy_clk', 'hsl_ecc')),
     ('Read leveling (hsl_rd_train)', ('hsl_rd_train',)),
     ('DFT', ('hsl_dft_top', 'hsl_prbs', 'hsl_loopback', 'hsl_err_cnt', 'hsl_lane_bist', 'hsl_mbist',
-             'hsl_bira', 'hsl_repair')),
+             'hsl_bira', 'hsl_repair', 'hsl_w1500')),
     ('SECDED codecs (fuses, data ECC)', ('hsl_secded',)),
     ('DFD (trace, counters, MISR)', ('hsl_dfd',)),
     ('CSR', ('hsl_csr',)),

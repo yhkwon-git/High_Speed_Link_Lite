@@ -46,6 +46,16 @@ module hsl_base_die_lite (
   input  wire  [31:0]                    cfg_wdata,
   output logic [31:0]                    cfg_rdata,
 
+  // IEEE 1500-style test port (hsl_w1500): serial access to the CSRs.
+  input  wire                            wrck,
+  input  wire                            wrstn,
+  input  wire                            selectwir,
+  input  wire                            shiftwr,
+  input  wire                            capturewr,
+  input  wire                            updatewr,
+  input  wire                            wsi,
+  output logic                           wso,
+
   // Host request port (mem_ctrl): word address, posted writes, in-order
   // responses.
   input  wire                            req_valid,
@@ -165,12 +175,41 @@ module hsl_base_die_lite (
 
   assign rst_logic_n = rst_sync_n & ~soft_rst;
 
+  // The 1500 port drives the CSR bus while it runs an access.
+  logic        w_act, w_we;
+  logic [7:0]  w_addr;
+  logic [31:0] w_wdata;
+  logic        csr_we;
+  logic [7:0]  csr_addr;
+  logic [31:0] csr_wdata;
+  assign csr_we    = w_act ? w_we    : cfg_we;
+  assign csr_addr  = w_act ? w_addr  : cfg_addr;
+  assign csr_wdata = w_act ? w_wdata : cfg_wdata;
+
+  hsl_w1500 u_w1500 (
+    .clk       (clk),
+    .rst_n     (rst_sync_n),
+    .wrck      (wrck),
+    .wrstn     (wrstn),
+    .selectwir (selectwir),
+    .shiftwr   (shiftwr),
+    .capturewr (capturewr),
+    .updatewr  (updatewr),
+    .wsi       (wsi),
+    .wso       (wso),
+    .bus_act   (w_act),
+    .bus_we    (w_we),
+    .bus_addr  (w_addr),
+    .bus_wdata (w_wdata),
+    .bus_rdata (cfg_rdata)
+  );
+
   hsl_csr u_csr (
     .clk          (clk),
     .rst_n        (rst_sync_n),
-    .cfg_we       (cfg_we),
-    .cfg_addr     (cfg_addr),
-    .cfg_wdata    (cfg_wdata),
+    .cfg_we       (csr_we),
+    .cfg_addr     (csr_addr),
+    .cfg_wdata    (csr_wdata),
     .cfg_rdata    (cfg_rdata),
     .soft_rst     (soft_rst),
     .train_bypass (train_bypass),

@@ -185,6 +185,9 @@ package hsl_pkg;
   // MISR:             write [0] run (0 holds the seed, all ones); read the
   //                   signature of the read data to the controller
   localparam int TR_DEPTH = 16;
+
+  // IEEE 1500-style port (hsl_w1500): WIR 000 BYPASS, 001 ID (32 bits),
+  // 010 CSR (41 bits {write, addr, data}); see the module header.
   localparam logic [7:0] CSR_TRACE      = 8'h54;
   localparam logic [7:0] CSR_TRACE_DATA = 8'h58;
   localparam logic [7:0] CSR_EVCNT0     = 8'h5C;

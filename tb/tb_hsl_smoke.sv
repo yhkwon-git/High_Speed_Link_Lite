@@ -26,6 +26,8 @@
 //          a stuck array bit corrected, ECC off
 //   T16    DFD: command counters, MISR, a manual-trigger trace, and a debug
 //          case (a bug planted in the channel model found with the trace)
+//   T17    IEEE 1500-style port: WIR, ID, WBY, CSR access; MBIST run and
+//          polled through the serial port only
 // Every host response is checked against a reference memory (scoreboard).
 // Controller half-period is CTRL_PERIOD_PS/2 = 625 ps (800 MHz).
 `timescale 1ns/100fs
@@ -99,12 +101,24 @@ module tb_hsl_smoke;
     if (fz_pgm) fuse[fz_addr] <= fuse[fz_addr] | fz_wdata;
   end
 
+  // IEEE 1500-style port (T17).
+  logic wrck      = 1'b0;
+  logic wrstn     = 1'b1;
+  logic selectwir = 1'b0;
+  logic shiftwr   = 1'b0;
+  logic capturewr = 1'b0;
+  logic updatewr  = 1'b0;
+  logic wsi       = 1'b0;
+  wire  wso;
+
   logic rsp_stall = 1'b0; // hold every response
   logic rsp_rand  = 1'b0; // take a response three clocks in four
 
   hsl_base_die_lite dut (
     .clk(clk), .rst_n(rst_n),
     .cfg_we(cfg_we), .cfg_addr(cfg_addr), .cfg_wdata(cfg_wdata), .cfg_rdata(cfg_rdata),
+    .wrck(wrck), .wrstn(wrstn), .selectwir(selectwir), .shiftwr(shiftwr), .capturewr(capturewr),
+    .updatewr(updatewr), .wsi(wsi), .wso(wso),
     .req_valid(req_valid), .req_ready(req_ready), .req_write(req_write),
     .req_addr(req_addr), .req_wdata(req_wdata),
     .rsp_valid(rsp_valid), .rsp_ready(rsp_ready), .rsp_rdata(rsp_rdata), .rsp_err(rsp_err),
@@ -2756,6 +2770,138 @@ module tb_hsl_smoke;
     end
   endtask
 
+  // ---------------------------------------------------------------------------
+  // T17: the IEEE 1500-style port. WIR reset, the ID register, WBY, and the
+  // CSR register: read the ID CSR, then run an MBIST March C- and poll it to
+  // the end through the serial port only.
+  // ---------------------------------------------------------------------------
+  // One WRCK cycle (20 ns, 16 controller clocks): inputs change in the low
+  // phase; WSO is sampled just before the rising edge.
+  task automatic w_cycle(input logic din, output logic dout);
+    begin
+      wsi  = din;
+      #9;
+      dout = wso;
+      #1;
+      wrck = 1'b1;
+      #10;
+      wrck = 1'b0;
+    end
+  endtask
+
+  // Capture, shift n bits (LSB first), then Update if upd.
+  task automatic w_scan(input logic sel, input integer n, input logic [63:0] din,
+                        output logic [63:0] dout, input logic upd);
+    integer i;
+    logic   b;
+    begin
+      dout      = '0;
+      selectwir = sel;
+      capturewr = 1'b1;
+      w_cycle(1'b0, b);
+      capturewr = 1'b0;
+      shiftwr   = 1'b1;
+      for (i = 0; i < n; i = i + 1) begin
+        w_cycle(din[i], b);
+        dout[i] = b;
+      end
+      shiftwr  = 1'b0;
+      updatewr = upd;
+      w_cycle(1'b0, b);
+      updatewr  = 1'b0;
+      selectwir = 1'b0;
+      #20;
+    end
+  endtask
+
+  task automatic w_ir(input logic [2:0] ins);
+    logic [63:0] o;
+    w_scan(1'b1, 3, {61'h0, ins}, o, 1'b1);
+  endtask
+
+  task automatic w_csr_write(input logic [7:0] a, input logic [31:0] d);
+    logic [63:0] o;
+    w_scan(1'b0, 41, {23'h0, 1'b1, a, d}, o, 1'b1);
+  endtask
+
+  task automatic w_csr_read(input logic [7:0] a, output logic [31:0] d);
+    logic [63:0] o;
+    begin
+      w_scan(1'b0, 41, {23'h0, 1'b0, a, 32'h0}, o, 1'b1);
+      w_scan(1'b0, 41, {23'h0, 1'b0, a, 32'h0}, o, 1'b0);
+      d = o[31:0];
+    end
+  endtask
+
+  task automatic run_t17();
+    integer      t17bad;
+    integer      k;
+    integer      guard;
+    logic [63:0] o;
+    logic [31:0] v;
+    logic [31:0] h;
+    begin
+      t17bad = 0;
+      soft_reset();
+      arm_mission(32'h0);
+      wrstn = 1'b0;
+      #40;
+      wrstn = 1'b1;
+      #40;
+
+      // ID register.
+      w_ir(3'b001);
+      w_scan(1'b0, 32, 64'h0, o, 1'b0);
+      if (o[31:0] !== HSL_ID) begin
+        $display("[T17] ID register: %h", o[31:0]);
+        t17bad = t17bad + 1;
+      end
+
+      // WIR read back (it captures the current instruction) and WBY.
+      w_scan(1'b1, 3, 64'h0, o, 1'b0);
+      if (o[2:0] !== 3'b001) begin
+        $display("[T17] WIR capture: %b", o[2:0]);
+        t17bad = t17bad + 1;
+      end
+      w_ir(3'b000);
+      w_scan(1'b0, 8, 64'hB2, o, 1'b0);
+      if (o[7:0] !== 8'h64) begin
+        $display("[T17] WBY: in B2 out %h, expected 64 (one bit later)", o[7:0]);
+        t17bad = t17bad + 1;
+      end
+
+      // CSR register: read ID, then an MBIST run controlled only from here.
+      w_ir(3'b010);
+      w_csr_read(CSR_ID, v);
+      if (v !== HSL_ID) begin
+        $display("[T17] CSR read of ID: %h", v);
+        t17bad = t17bad + 1;
+      end
+      clear_faults();
+      w_csr_write(CSR_MBIST, {9'h0, 3'd3, 4'd0, 8'hD0, 2'b00, 2'd1, 1'b0, 2'd2, 1'b1});
+      guard = 0;
+      v = 32'h1;
+      while (((v[0] === 1'b1) || (v[1] !== 1'b1)) && (guard < 200)) begin
+        w_csr_read(CSR_MBIST, v);
+        guard = guard + 1;
+      end
+      csr_read(CSR_MBIST, h);
+      if ((v[2:0] !== 3'b110) || (h !== v)) begin
+        $display("[T17] MBIST over 1500: status %h (host sees %h) after %0d polls", v, h, guard);
+        t17bad = t17bad + 1;
+      end
+      $display("[T17] 1500 port: ID %h, WBY one bit, CSR register read ID and ran MBIST March C- to PASS (%0d polls of 82 bits)",
+               HSL_ID, guard);
+      w_ir(3'b000);
+
+      if (t17bad == 0) begin
+        $display("[T17] PASS");
+      end else begin
+        errors = errors + t17bad;
+      end
+    end
+  endtask
+
   initial begin
     errors = 0;
     // block_errors is driven by the u_blocks output port only.
@@ -2812,6 +2958,7 @@ module tb_hsl_smoke;
     run_t14();
     run_t15();
     run_t16();
+    run_t17();
 
     if (sb_err != 0) begin
       $display("[SB] %0d read mismatches over the run", sb_err);

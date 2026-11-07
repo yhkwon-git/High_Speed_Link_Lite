@@ -44,6 +44,8 @@ set_false_path -from [get_ports rst_n]
 set_ideal_network [get_pins {u_rst/rst_no u_csr/soft_rst}]
 
 # 40% of the controller period. The old 4.0 ns belonged to the 10 ns smoke clock.
+# The 1500 port inputs go to 2-flop synchronizers (hsl_w1500); WRCK is slow
+# and sampled in clk, so they are timed as ordinary inputs to the first flop.
 set_input_delay -clock clk 0.5 [get_ports {
   cfg_we
   cfg_addr
@@ -54,6 +56,13 @@ set_input_delay -clock clk 0.5 [get_ports {
   req_wdata
   rsp_ready
   fz_rdata
+  wrck
+  wrstn
+  selectwir
+  shiftwr
+  capturewr
+  updatewr
+  wsi
 }]
 
 set_output_delay -clock clk 0.5 [get_ports {
@@ -71,6 +80,7 @@ set_output_delay -clock clk 0.5 [get_ports {
   fz_rd
   fz_pgm
   fz_wdata
+  wso
 }]
 
 # CTRL and REMAP settings that steer the write data (PRBS payload, DBI rule,
