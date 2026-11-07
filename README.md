@@ -803,6 +803,7 @@ portfolio-deck/  포트폴리오 PDF, PPTX (631d3bd 판: 3–20쪽 4feb39f, 21�
 | [05 PD 가이드](docs/05_pd_guide.md) | 클럭, 리셋, CDC, 핀 책임, floorplan, PD가 되묻는 항목 |
 | [06 DFT 계획](docs/06_dft_plan.md) | 관측점, 루프백 두 종류, PRBS, 레인 BIST, MBIST와 고장 모델 · 검출표, BIRA · repair · fuse, ECC, DFD와 디버그 사례, 1500 포트, 스캔 규칙, 웨이퍼 테스트 순서 |
 | [07 용어](docs/07_glossary.md) | 이 프로젝트에서 쓰는 용어의 뜻 |
+| [08 시험 흐름](docs/08_test_flow.md) | 웨이퍼 · 패키지 시험 순서(전원 · fuse 로드 → 접근 → 데이터패스 → 링크 · 리페어 → 읽기 레벨링 → ECC → 배열 MBIST → BIRA · fuse → mission), 합격 조건, bin, 실패 분석, 시험 시간 |
 | [실습 E0–E12](docs/exercises.md) · [E0/E1 노트](docs/e0_e1_notes.md) · [E12 클럭 대조](docs/e12_clocks.md) | 실습 단계와 완료 조건, 리셋 파형 설명, 클럭 주기 대조표 |
 
 ## 한계와 다음 단계

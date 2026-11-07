@@ -103,6 +103,8 @@ aggressor와 victim은 다른 워드이고, aggressor가 주소 순서로 victim
 
 ## 테스트가 이 설계에 쓰는 순서
 
+합격 조건, bin, 시험 시간까지 넣은 전체 흐름은 [`08_test_flow.md`](08_test_flow.md)에 있다.
+
 1. 리셋 해제 후 ID를 읽어 접근을 확인한다.
 2. 병렬 루프백과 PRBS로 디지털 데이터패스를 본다.
 3. `CSR_LANE_BIST`로 레인 BIST를 돌린다. 한 레인만 실패했으면 그 번호를 `CSR_REMAP`에 쓰고 DRAM 쪽에도 같은 설정을 한 뒤 다시 돌려 PASS를 확인한다.
