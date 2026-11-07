@@ -20,9 +20,9 @@
 
 1. Base die 디지털은 호스트와 DRAM 코어 다이 사이에 있다. 스터디 슬라이스는 DQ 8비트, 버스트 4, 뱅크 4개다.
 2. 스펙을 먼저 적고, 컨트롤러와 PHY를 버스트 단위로 나눴다. 시뮬 클럭은 컨트롤러 800 MHz, PHY 1.6 GHz다. 뱅크 타이밍을 먼저 닫은 뒤 기어박스와 비동기 FIFO를 그 클럭에 올렸다.
-3. 지금 도는 것은 CSR, 리셋 동기화, done 펄스 트레이닝, 깊이 4 큐, 뱅크 타이밍, bypass 채널 트래픽, DBI(DC · AC), shift 레인 리페어와 레인 BIST, 읽기 레벨링, PRBS 병렬 루프백이다.
-4. 회귀는 `sim/run_smoke.ps1` 한 번이다. 스모크와 T1–T11이 같이 돈다. PD 가이드의 포인터 경로는 `set_max_delay`이고 false path가 아니다.
-5. 컨트롤러 항목은 큐, in-order 스케줄러, 뱅크 FSM이다. REF는 아직 발행하지 않는다.
+3. 지금 도는 것은 CSR, 리셋 동기화, done 펄스 트레이닝, 메모리 컨트롤러(읽기 · 쓰기 큐, FR-FCFS, per-bank refresh), DFI 형태 경계, mission 데이터패스(CA 핀, TX 기어와 WDQS, RDQS 캡처와 Gray FIFO), DBI(DC · AC), shift 레인 리페어와 레인 BIST, 읽기 레벨링, PRBS 병렬 루프백이다.
+4. 회귀는 `sim/run_smoke.ps1` 한 번이다. 스모크와 T1–T12가 같이 돌고, 호스트 응답은 모두 스코어보드가, 핀의 명령은 채널 모델이 검사한다. PD 가이드의 포인터 경로는 `set_max_delay`이고 false path가 아니다.
+5. 컨트롤러는 Mini DRAM Controller 저장소의 v4 RTL을 그대로 쓴다. 이 저장소가 다루는 것은 그 경계(행 · 열 명령 버스, WL 뒤 쓰기 데이터, `rddata_valid`)와 칩 레벨 검증이다. 처음의 in-order 컨트롤러와 bypass framer는 `0193c04`에서 없앴다.
 
 ## 공개 HBM과 이 모델의 거리
 

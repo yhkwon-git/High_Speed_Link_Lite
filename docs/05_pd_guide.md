@@ -31,8 +31,9 @@ v0.1에서 디지털이 PD에 넘기는 내용이다. 좌표와 라이브러리 
 
 디지털이 책임지는 값:
 
-- `pin_cke`, `pin_ca`, `pin_dq_o`, `pin_dq_oe`, `pin_dqs_o`의 논리값
-- 버스트 밖에서 `pin_dq_oe = 0`
+- `pin_cke`, 행 · 열 CA(`pin_rca`, `pin_cca`), 쓰기 beat(`pin_tx_beat`, `pin_tx_dqs`, `pin_tx_dv`)의 논리값과 `rx_dly_code`
+- 쓰기 beat가 없으면 `pin_tx_beat = 0`, `pin_tx_dv = 0`(드라이버 enable의 근거)
+- `pin_ck`의 게이트(`phy_en`, PHY 하강 엣지에서 잡은 enable)
 
 아날로그와 풀커스텀이 책임지는 것:
 
@@ -46,15 +47,15 @@ PD가 맞춰야 하는 의도:
 
 ## Floorplan
 
-v0.1에는 컴파일된 SRAM 매크로가 없다. FIFO는 플롭 4개 깊이라 매크로로 올리지 않는다.
+컴파일된 SRAM 매크로는 없다. 읽기 FIFO는 깊이 4 플롭이고, 컨트롤러의 큐(읽기 8 · 쓰기 8)와 응답 버퍼도 플롭이다(컨트롤러 FF 2,004개, 칩 2,741개 중). 큐는 엔트리마다 주소를 비교하고 나이 행렬을 갖고 있어 매크로로 옮기기 어렵다.
 
 배치 의도만 적으면:
 
 - PHY 핀 로직은 채널 범프 쪽에 둔다.
-- CSR, FSM, 스케줄러는 그 안쪽에 둔다.
+- CSR, FSM, 컨트롤러는 그 안쪽에 둔다. 컨트롤러는 칩 면적의 74%다(Nangate45, `0193c04`).
 - TSV keep-out 좌표는 스택 설계가 준다. 디지털은 keep-out 안에 매크로를 두지 않는다. 좌표가 생기기 전에는 "매크로 없음"이 이 가이드의 답이다.
 
-나중에 재정렬 버퍼를 SRAM 매크로로 바꾸면, 그 매크로 이름과 halo를 이 절에 추가한다. Logic/Macro floorplan의 디지털 측 입력은 이 목록이다.
+나중에 응답 버퍼나 큐 데이터를 SRAM 매크로로 바꾸면, 그 매크로 이름과 halo를 이 절에 추가한다. Logic/Macro floorplan의 디지털 측 입력은 이 목록이다.
 
 ## PD가 디지털에 되묻는 항목
 

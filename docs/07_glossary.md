@@ -9,12 +9,21 @@
 | TSV | 다이를 수직으로 잇는 비아. 디지털 RTL 밖 |
 | 인터포저 | 호스트와 HBM을 얹는 실리콘 기판 |
 | 소스 동기 | 스트로브가 데이터와 함께 온다. 클럭 복원(CDR)형 SerDes와 구분한다 |
-| Gearbox | 느린 넓은 버스와 빠른 좁은 버스 사이의 폭 변환 |
+| Gearbox (TX 기어) | 느린 넓은 버스와 빠른 좁은 버스 사이의 폭 변환. 여기서는 컨트롤러 클럭 워드 하나를 `clk_phy` beat 두 개로 |
 | Write leveling | DRAM 입력에서 쓰기 스트로브 엣지를 CK 엣지에 맞추는 절차. 데이터를 스트로브 eye 중앙에 두는 것은 write training |
 | Read leveling | 읽기 데이터가 컨트롤러 캡처 윈도우에 들어오도록 맞추는 절차 |
 | Deskew | 레인마다 다른 비행 시간을 지연으로 흡수 |
 | DBI | 바이트 단위 반전. 이 저장소의 규칙은 `docs/01_requirements.md` |
 | DFI | DDR PHY 인터페이스 규격. 역할 분리만 참고했고, 이 포트는 DFI가 아니다 |
+| DFI 형태 경계 | 이 저장소의 컨트롤러 ↔ PHY 신호: 행 · 열 명령 매 클럭, WL 뒤 `wrdata_en`과 쓰기 데이터, `rddata_valid`와 읽기 데이터 |
+| WDQS / RDQS | 쓰기 / 읽기 데이터 스트로브. HBM3처럼 방향별로 나뉜다. 여기서 RDQS는 CK + tDQSCK |
+| Posted write | 쓰기를 받는 즉시 응답하고 데이터는 큐에 두었다가 나중에 DRAM에 쓰는 방식 |
+| Forwarding | 쓰기 큐에 있는 주소를 읽으면 DRAM 대신 큐의 가장 최근 쓰기로 답하는 것 |
+| FR-FCFS | 열린 row에 맞는 요청(row hit)을 먼저, 같은 조건이면 오래된 요청을 먼저 고르는 스케줄링 |
+| Bank group | 뱅크 묶음. 같은 그룹 안의 명령은 긴 간격(_L), 다른 그룹 사이는 짧은 간격(_S)을 쓴다. 여기서는 2 × 2 |
+| REFpb | per-bank refresh. 한 뱅크만 tRFCpb 동안 막고 다른 뱅크는 계속 일한다 |
+| RFM | Refresh management. 뱅크마다 ACT를 세어 한도에 닿으면 추가 refresh를 내는 RowHammer 대책 |
+| 스코어보드 | 응답이 가져야 할 값을 참조 모델로 계산해 실제 응답과 비교하는 테스트벤치 부품 |
 | PPA | Performance, Power, Area. 구조를 고를 때 같이 적는 세 축 |
 | DFT / DFD | 테스트 용이성 / 디버그 용이성. 루프백은 DFT, 상태와 에러 카운트는 DFD |
 | Lane repair | 고장 핀을 건너뛰도록 레인을 한 칸씩 리던던트 핀 쪽으로 미는 디지털 먹스(핀마다 2:1) |
@@ -22,7 +31,9 @@
 | Read leveling | 레인마다 읽기 지연선 코드를 스윕해 데이터를 바르게 읽는 구간(eye)을 찾고 그 중앙에 두는 트레이닝 |
 | Eye | 샘플 시점(여기서는 지연선 코드)을 옮겨도 같은 UI를 바르게 읽는 구간 |
 | ZQ | 드라이버 임피던스 보정. 회로는 아날로그, 순서는 디지털 FSM |
-| tRCD, tRP, tRAS | ACT 후 컬럼 명령(RD/WR)까지, PRE 후 ACT까지, ACT 후 PRE까지 |
-| tCCD | 컬럼 명령 사이의 채널 간격 |
-| tWTR | 쓰기 후 읽기까지의 간격 |
+| tRCD, tRP, tRAS, tRC | ACT 후 컬럼 명령(RD/WR)까지, PRE 후 ACT까지, ACT 후 PRE까지, 같은 뱅크 ACT 사이 |
+| tCCD_S / tCCD_L | 컬럼 명령 사이 간격(다른 / 같은 bank group) |
+| tRRD, tFAW | 다른 뱅크 ACT 사이 간격, 어느 tFAW 구간에도 ACT는 4개까지 |
+| tWTR, tRTW | 쓰기 후 읽기까지, 읽기 후 쓰기까지(데이터 버스 방향 전환) |
+| tRFC, tREFI | refresh가 막는 시간, refresh 주기 |
 | Pseudo-channel | HBM2 채널을 둘로 나눈 동작 단위. 이 모델은 그 단위 하나를 더 축소했다 |

@@ -1,5 +1,8 @@
 # 실습
 
+> [!NOTE]
+> 이 실습은 처음의 in-order 컨트롤러(`hsl_mc_top`, 큐 · 스케줄러 · 뱅크 FSM)와 저속 bypass framer를 기준으로 쓴 기록이다. `0193c04`에서 컨트롤러를 Mini DRAM Controller v4로 바꾸고 bypass framer를 없앴으므로, 아래의 `hsl_mc_top`, `cmd_*`, `phy_bypass`, 블록 테스트 T2 · T3은 그 이전 커밋(`211c9d7`)에서 볼 수 있다. 지금의 구조와 테스트는 README와 `docs/02`–`04`에 있다.
+
 E0부터 E12까지 구현되어 있다. 각 실습은 자기 테스트가 `[SMOKE] PASS`와 함께 통과해야 끝이다. 스모크가 깨지면 그 실습의 완료로 보지 않는다. 회귀는 `sim/run_smoke.ps1` 한 번이고, T1–T8과 블록 검사가 같은 프로세스에서 돈다. E0/E1 설명은 `docs/e0_e1_notes.md`, E12 대조표는 `docs/e12_clocks.md`다.
 
 포트 목록은 유지한다. 폭을 바꿔야 하면 `docs/01_requirements.md`와 `hsl_pkg`를 먼저 고친다.

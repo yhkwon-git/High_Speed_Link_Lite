@@ -8,32 +8,50 @@ hsl_base_die_lite
   hsl_csr
   hsl_training_fsm
   hsl_rd_train
-  hsl_mc_top
-    hsl_cmd_queue
-    hsl_bank_fsm x4
-    hsl_scheduler
+  mem_ctrl                 Mini DRAM Controller v4 (rtl/mc, 그 저장소 44a0bb3과 같은 파일)
+    mc_queue x2            읽기 8, 쓰기 8
+    mc_xage
+    mc_wdrain
+    mc_bank x4
+    mc_chan
+    mc_refresh
+    mc_sched
+    mc_resp
   hsl_phy_top
     hsl_phy_clk
     hsl_dbi
-    hsl_lane_shift
     hsl_phy_mis
+      hsl_lane_shift
       hsl_tx_gear
       hsl_cdc_fifo
-    hsl_deskew
-    hsl_phy_tx
-    hsl_phy_rx
   hsl_dft_top
     hsl_prbs
     hsl_loopback
     hsl_err_cnt
     hsl_lane_bist
+hsl_deskew                 블록 테스트만
 ```
 
 ## 호스트 포트
 
 `cfg_*`는 바이트 주소의 32비트 버스다. 읽기는 조합 논리라, 주소를 준 같은 사이클 안에 데이터가 유효하다. 테스트벤치는 주소를 준 뒤 1 ps 뒤에 읽는다. 쓰기는 `cfg_we`가 1인 클럭 엣지에서 일어난다.
 
-`cmd_*`와 `rsp_*`는 valid/ready 버스트 버스다. 데이터 폭은 32비트다.
+요청 포트는 컨트롤러의 호스트 포트를 그대로 낸다.
+
+| 신호 | 폭 | 뜻 |
+| --- | --- | --- |
+| `req_valid`, `req_ready` | 1, 1 | `valid && ready`인 엣지에서 요청 하나가 들어간다 |
+| `req_write` | 1 | 1 쓰기, 0 읽기 |
+| `req_addr` | 14 | 워드 주소. 컨트롤러의 XOR 맵: col = a[3:0], bank = a[5:4] ^ a[7:6], row = a[13:6]. `hsl_pkg::host_addr(bank, row, col)`이 그 반대 |
+| `req_wdata` | 32 | 쓰기 데이터(버스트 하나) |
+| `rsp_valid`, `rsp_ready` | 1, 1 | 요청마다 응답 하나, 요청 순서대로 |
+| `rsp_rdata`, `rsp_err` | 32, 1 | 읽기 데이터. `rsp_err`는 0 |
+
+- 쓰기는 받은 다음 클럭에 응답한다(posted). 데이터는 쓰기 큐에 있다가 쓰기 배치로 나간다.
+- 쓰기 큐에 있는 주소를 읽으면 가장 최근 쓰기로 바로 답한다(forwarding). 이 읽기는 핀에 RD를 내지 않는다.
+- 읽기 큐에 있는 주소로 쓰려 하면 그 읽기가 나갈 때까지 쓰기를 받지 않는다.
+- 진행 중인 요청은 15개(tag 4 bit)까지다. 호스트가 `rsp_ready`를 내리면 응답이 쌓이고, tag가 차면 `req_ready`가 0이 된다.
+- `req_ready`는 MISSION이면서 `CTRL.phy_en`일 때만 1이 될 수 있다. 레인 BIST가 도는 동안은 0이고 `rsp_valid`도 0이다.
 
 ## CSR
 
@@ -42,18 +60,18 @@ hsl_base_die_lite
 | 주소 | 이름 | 접근 | 리셋 | 내용 |
 | --- | --- | --- | --- | --- |
 | `0x00` | ID | RO | | `0x48534C31` |
-| `0x04` | VERSION | RO | | `0x00000100` |
+| `0x04` | VERSION | RO | | `0x00000300` |
 | `0x08` | CTRL | RW | 0 | 아래 비트 |
 | `0x0C` | STATUS | RO | | 아래 비트 |
 | `0x10` | TRAIN | RW | wait=2 | `[0]` start, `[4:1]` done 펄스, `[15:8]` wait 저장 |
 | `0x14` | ERRCNT | RW | 0 | 읽기는 카운트, 쓰기는 clear |
 | `0x18` | REMAP | RW | 0 | `[0]` enable, `[7:4]` 건너뛸 핀: 0–7 DQ, 8 DBI, 9 이상은 shift 없음 |
-| `0x1C` | TIMING0 | RW | 패키지 기본값 | `{tCCD, tRAS, tRP, tRCD}` |
-| `0x20` | TIMING1 | RW | 패키지 기본값 | `{tRFC, tRTP, tWR, tWTR}` |
+| `0x1C` | TIMING0 | RO | | `{tCCD_L, tRAS, tRP, tRCD}`, 컨트롤러 `dram_pkg` 상수 |
+| `0x20` | TIMING1 | RO | | `{tRFC, tRTP, tWR, tWTR_L}`, 컨트롤러 `dram_pkg` 상수 |
 | `0x24` | LANE_BIST | RW | 0 | 쓰기 `[0]` start, `[5:4]` bank, `[15:8]` row. 읽기 `[0]` busy, `[1]` done, `[2]` pass, `[3]` 한 레인만 실패, `[7:4]` 가장 낮은 실패 레인, `[15:8]` DQ 레인별 에러, `[20:16]` 불일치 버스트 수 |
 | `0x28` | RDTRAIN | RW | 0 | 쓰기 `[0]` start, `[6:4]` 읽어 볼 레인. 읽기 `[0]` busy, `[1]` done, `[2]` 모든 레인에서 eye 찾음, `[6:4]` 레인, `[12:8]` 그 레인의 코드, `[20:16]` eye 시작, `[29:24]` eye 폭 |
 
-각 필드는 8비트이고, 오른쪽이 LSB다. tRCD와 tWTR이 `[7:0]`에 있다.
+TIMING 필드는 8비트이고, 오른쪽이 LSB다. tRCD와 tWTR_L이 `[7:0]`에 있다. 쓰기는 무시한다. 타이밍은 컨트롤러가 상수로 지키므로, 바꾸려면 컨트롤러 저장소의 `dram_pkg`를 고친다.
 
 CTRL 비트:
 
@@ -61,12 +79,12 @@ CTRL 비트:
 | --- | --- | --- |
 | 0 | soft_rst | CSR 바깥 데이터패스 리셋 |
 | 1 | train_bypass | FSM을 MISSION으로. 내려도 MISSION에 남음 |
-| 2 | loopback | 병렬 루프백. RD가 루프백 중 마지막 WR 버스트를 돌려줌. 핀 루프백은 아님 |
-| 3 | prbs_en | PRBS7을 TX 페이로드로 |
+| 2 | loopback | 병렬 루프백. RD를 핀으로 내지 않고 루프백 중 마지막 쓰기 버스트로 답함. 핀 루프백은 아님 |
+| 3 | prbs_en | PRBS7을 쓰기 페이로드로 |
 | 4 | dbi_en | DBI 켬. 규칙은 bit 6 |
-| 5 | phy_bypass | 1일 때 TX가 채널 모델과 버스트를 주고받음 |
-| 7 | phy_en | mission 데이터패스(행 · 열 CA 핀, PHY beat). `phy_bypass`가 우선 |
-| 6 | dbi_ac | 0: DC(beat popcount가 4보다 크면 반전), 1: AC(직전 UI 대비 DQ 전이가 4보다 많으면 반전. beat 0의 기준은 WR 헤더 바이트) |
+| 5 | (예약) | v0.1의 `phy_bypass`. 0으로 읽힘 |
+| 6 | dbi_ac | 0: DC(beat popcount가 4보다 크면 반전), 1: AC(직전 UI 대비 DQ 전이가 4보다 많으면 반전. beat 0의 기준은 직전 클럭 쓰기 버스트의 마지막 바이트, 없으면 0) |
+| 7 | phy_en | PHY 켬: CK 출력, 명령과 데이터를 핀으로. 요청 포트도 이때만 열림 |
 
 STATUS 비트:
 
@@ -93,23 +111,24 @@ TRAIN 쓰기는 `[0]` start, `[1]` zq_done, `[2]` wrlvl_done, `[3]` rdlvl_done, 
 | 7 | WRTRAIN | 한 클럭 뒤 MISSION |
 | 8 | MISSION | CKE = 1, `train_done` = 1 |
 
-`train_bypass`가 1이면 리셋이 풀린 다음 클럭에 MISSION으로 간다. bypass를 내려도 MISSION에 남는다. `soft_rst`가 리셋을 잡고 있으면 bypass보다 리셋이 우선한다.
+`train_bypass`가 1이면 리셋이 풀린 다음 클럭에 MISSION으로 간다. bypass를 내려도 MISSION에 남는다. `soft_rst`가 리셋을 잡고 있으면 bypass보다 리셋이 우선한다. CKE가 0인 동안 채널 모델은 모든 뱅크를 닫힌 것으로 본다(soft reset 뒤 컨트롤러와 같은 상태).
 
-## 명령
+## DRAM 명령
 
-| 값 | 이름 |
-| --- | --- |
-| 0 | NOP |
-| 1 | ACT |
-| 2 | PRE |
-| 3 | PREA |
-| 4 | RD |
-| 5 | WR |
-| 6 | REF |
-| 7 | REFA |
-| 8 | MRS |
-| 9 | PDE |
-| A | PDX |
+컨트롤러의 `dram_cmd_e` 코드가 그대로 CA 핀에 나간다.
+
+| 값 | 이름 | 버스 | 뜻 |
+| --- | --- | --- | --- |
+| 0 | NOP | 둘 다 | |
+| 1 | ACT | 행 | row를 연다 |
+| 2 | RD | 열 | 열린 row에서 읽기. `ap` = 1이면 auto-precharge |
+| 3 | WR | 열 | 열린 row에 쓰기. 데이터는 WL 클럭 뒤 |
+| 4 | PRE | 행 | 한 뱅크 닫기 |
+| 5 | REF | 행 | 전체 refresh. 모든 뱅크가 닫혀 있어야 함(REF_ALL 모드) |
+| 6 | PREA | 행 | 모든 뱅크 닫기(REF_ALL 모드) |
+| 7 | REFPB | 행 | 한 뱅크 refresh(per-bank 모드, 기본). RFM도 이 명령 |
+
+컨트롤러는 매 클럭 행 명령 하나와 열 명령 하나를 낼 수 있다. 열 명령은 row를 싣지 않는다. 같은 뱅크 타이밍은 `mc_bank`, bank group 사이 타이밍(tCCD · tRRD · tWTR의 S/L, tFAW, tRTW, tRFC)은 `mc_chan`, refresh는 `mc_refresh`와 `mc_sched`가 맡는다. 자세한 규칙은 컨트롤러 저장소의 `docs/spec.md`에 있다.
 
 ## 핀
 
@@ -117,44 +136,30 @@ TRAIN 쓰기는 `[0]` start, `[1]` zq_done, `[2]` wrlvl_done, `[3]` rdlvl_done, 
 
 | 핀 | 폭 | 값 |
 | --- | --- | --- |
-| `pin_ck` | 1 | mission에서 `clk_phy`(게이트, PHY 하강 엣지 enable). 그 밖에는 0 |
+| `pin_ck` | 1 | `phy_en`일 때 `clk_phy`(게이트, PHY 하강 엣지 enable). 그 밖에는 0 |
 | `pin_cke` | 1 | FSM이 RESET이 아니면 1 |
-| `pin_ca` | 8 | `{2'b00, bank, opc}` |
-| `pin_dq_o` | 10 | `{RED, DBI, DQ[7:0]}` |
-| `pin_dq_oe` | 1 | 구동 사이클만 1 |
-| `pin_dqs_o` | 1 | 심볼 사이클만 1 |
-| `pin_dq_i` | 10 | 입력 |
-| `pin_dqs_i` | 1 | 입력 |
-| `pin_rca` | 12 | mission 행 CA `{rcmd[1:0], bank, row}`, rcmd 1 ACT, 2 PRE |
-| `pin_cca` | 8 | mission 열 CA `{ccmd[1:0], bank, col}`, ccmd 1 RD, 2 WR |
-| `pin_tx_beat` | 20 | mission 쓰기 beat, UI 두 개 × `{RED, DBI, DQ}`, UI0이 하위 |
-| `pin_tx_dqs` | 2 | WDQS 패턴, 데이터가 있는 beat에서 `01` |
-| `pin_tx_dv` | 1 | 쓰기 beat 유효 |
+| `pin_rca` | 13 | 행 CA `{cmd[2:0], bank[1:0], row[7:0]}`, 한 컨트롤러 클럭 |
+| `pin_cca` | 10 | 열 CA `{cmd[2:0], bank[1:0], col[3:0], ap}`, 한 컨트롤러 클럭 |
+| `pin_tx_beat` | 20 | 쓰기 beat, UI 두 개 × `{RED, DBI, DQ[7:0]}`, UI0이 하위 |
+| `pin_tx_dqs` | 2 | WDQS 패턴, 데이터가 있는 beat에서 `01`(UI0 high, UI1 low) |
+| `pin_tx_dv` | 1 | 쓰기 beat 유효. 유효하지 않은 beat는 0 |
 | `pin_rdqs` | 1 | 입력. RDQS, 읽기 beat를 이 상승 엣지에서 받음 |
 | `pin_rx_beat`, `pin_rx_dv` | 20, 1 | 입력. 읽기 beat와 유효 |
+| `rx_dly_code` | 8 × 5 | 레인별 읽기 지연선 코드, 아날로그 PHY로 |
 
-`phy_bypass`가 1일 때만 TX가 핀을 움직인다. 명령이 받아진 사이클은 IDLE이라 핀이 조용하고, 다음 사이클이 헤더다.
+PHY는 컨트롤러의 행 · 열 명령을 한 클럭 레지스터로 받아 그대로 낸다(`phy_en`이 0이면 NOP). 쓰기 데이터는 컨트롤러가 WR 뒤 WL(1) 클럭에 `wrdata_en`과 함께 낸다. PHY는 그 워드를 DBI → 레인 shift(4 심볼) → 레지스터에 넣고, TX 기어(`hsl_tx_gear`)가 반 주기 뒤의 PHY 엣지(E1)에서 받아 하위 beat를, 다음 E0에서 상위 beat를 낸다. E1은 컨트롤러 클럭 토글을 PHY 클럭으로 이전 값과 비교해 찾는다. 그래서 첫 beat는 WR이 핀에 나온 뒤 1.5 컨트롤러 클럭(CK 3주기)에 나간다.
 
-| 명령 | 핀 |
-| --- | --- |
-| ACT | 한 사이클. DQ[7:0]에 row, dqs=1 |
-| PRE | 한 사이클. dqs=1 |
-| WR | 헤더(DQ[3:0]에 col)와 데이터 beat 4개 |
-| RD | 헤더 한 사이클. 모델이 그 negedge부터 논리 바이트 4개를 구동 |
-| NOP | IDLE에서 받고 핀은 조용함 |
+읽기는 RDQS 상승 엣지에서 beat 두 개를 모아 깊이 4 Gray FIFO(40 bit)에 쓰고, 컨트롤러 클럭에서 꺼내 shift와 DBI를 푼 뒤 `rddata_valid`로 컨트롤러에 넘긴다. 핀의 RD부터 `rddata_valid`까지 6 클럭이다(T12). 지연을 고정하지 않으므로 컨트롤러는 `rddata_valid`로 진행 중인 RD를 센다.
 
-채널 모델은 컨트롤러 클럭의 negedge에서 샘플한다. DQS는 스터디용으로 송수신을 한 쌍의 단일 핀으로 줄였다. 실제 HBM3는 WDQS와 RDQS가 나뉜다.
+채널 모델은 CA를 컨트롤러 클럭의 negedge에서, 쓰기 beat를 beat 가운데(`pin_ck` negedge)에서 샘플한다. 쓰기 버스트는 WR이 들어온 순서대로, WR 때 열려 있던 row에 저장한다. 읽기 beat는 RD 뒤 `RL_RDQS` = 3 RDQS 주기에 RDQS 하강 엣지에서 낸다.
 
-`loopback`이 1이어도 TX는 핀을 똑같이 구동한다. 달라지는 것은 RX다. `hsl_phy_top`의 `lb_hold`가 루프백 중 받아진 WR의 페이로드(DBI와 리페어 전)를 잡아 두고, RD는 `rd_start` 다음 클럭에 핀을 보지 않고 그 값을 응답한다.
+`loopback`이 1이면 PHY는 쓰기를 그대로 핀으로 내고, `hsl_phy_top`의 `lb_hold`가 그 페이로드(DBI와 리페어 전)를 잡아 둔다. RD는 핀에 CA를 내지 않고 다음 클럭에 그 값으로 `rddata_valid`를 낸다. 컨트롤러가 진행 중인 RD를 세므로 순서는 유지된다. auto-precharge가 붙은 RD라면 DRAM 쪽 뱅크 상태가 컨트롤러와 어긋나므로, 루프백은 기본값인 open page에서만 쓴다.
 
-mission 경로의 TX 기어(`hsl_tx_gear`)는 컨트롤러 엣지에서 나온 워드를 반 주기 뒤의 PHY 엣지(E1)에서 받아 하위 beat를, 다음 E0에서 상위 beat를 낸다. E1은 컨트롤러 클럭 토글을 PHY 클럭으로 이전 값과 비교해 찾는다. 읽기는 RDQS 상승 엣지에서 beat 두 개를 모아 깊이 4 Gray FIFO(40 bit)에 쓰고, 컨트롤러 클럭에서 꺼내 shift와 DBI를 푼다.
-
-## 뱅크 FSM
+## 레인 BIST
 
 ```text
-CLOSED --ACT--> ACTIVATING --tRCD--> OPEN --PRE--> PRECHARGING --tRP--> CLOSED
+IDLE --start--> P_WR: 쓰기 16개 (컬럼 0..15, PRBS7) --> P_DRAIN: q_empty 대기
+     --> P_RD: 읽기 16개 --> P_WAIT: 응답 32개 (쓰기 응답 16은 세기만) --> done
 ```
 
-`timing_ok`는 CLOSED에서 1이다. OPEN에서는 `ras_left`와 컬럼 뒤 블록(tWR 또는 tRTP)이 둘 다 0일 때 1이다. 그래서 컬럼 명령은 tRCD에 더해 tRAS도 기다린다. JEDEC 최소보다 엄격하고, tRCD 전에 RD를 거절하는 조건은 그대로다. tCCD와 tWTR은 스케줄러가 채널 단위로 본다. 컬럼을 발행하면 `ccd_cnt`에 `tCCD-1`을 넣어, tCCD=2이면 한 사이클을 띄우고 다음 컬럼을 낸다.
-
-스케줄러는 큐 head만 본다. head가 불법이면 그 비트를 버리지 않고 `req_ready`를 0으로 둔다. NOP은 항상 합법이다. REF와 그 밖의 예약 opcode는 불법이라 head를 막는다. 이런 명령이 큐에 들어가면 뒤 명령도 나가지 않고, `soft_rst`로만 풀린다.
+`LANE_BIST`의 bank와 row는 DRAM 쪽 주소다. BIST는 `host_addr`로 호스트 주소를 만들어 요청 포트에 낸다. 쓰기가 큐에 남은 채 읽으면 컨트롤러가 큐에서 답해 링크를 거치지 않으므로, 컨트롤러의 `q_empty`(두 큐가 모두 빔)를 기다린 뒤 읽는다. 큐가 비면 모든 쓰기의 WR이 핀으로 나간 것이고, 같은 뱅크의 RD는 컨트롤러가 tWTR_L을 지키므로 데이터보다 먼저 닿지 않는다(채널 모델이 검사). 읽은 워드는 같은 seed의 PRBS7과 beat마다 비교해 DQ 레인별로 sticky 기록한다.

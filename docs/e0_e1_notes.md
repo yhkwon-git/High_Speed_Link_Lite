@@ -1,5 +1,8 @@
 # E0 / E1 노트
 
+> [!NOTE]
+> 이 실습은 처음의 in-order 컨트롤러(`hsl_mc_top`, 큐 · 스케줄러 · 뱅크 FSM)와 저속 bypass framer를 기준으로 쓴 기록이다. `0193c04`에서 컨트롤러를 Mini DRAM Controller v4로 바꾸고 bypass framer를 없앴으므로, 아래의 `hsl_mc_top`, `cmd_*`, `phy_bypass`, 블록 테스트 T2 · T3은 그 이전 커밋(`211c9d7`)에서 볼 수 있다. 지금의 구조와 테스트는 README와 `docs/02`–`04`에 있다.
+
 ## E0. 계층과 `cmd_ready`
 
 `hsl_base_die_lite` 아래 트리다.
