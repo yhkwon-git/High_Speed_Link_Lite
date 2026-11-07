@@ -756,6 +756,11 @@ powershell -ExecutionPolicy Bypass -File .\sim\run_smoke.ps1
 bash sim/run_smoke.sh        # 또는 make -C sim smoke
 ```
 
+```bash
+# RTL lint: Verilator -Wall, 경고 0. 남긴 waiver는 이유와 함께 syn/lint.vlt에 있다
+make -C sim lint
+```
+
 ```text
 # ModelSim / Questa (저장소 루트에서. work/와 transcript는 git에서 제외됨)
 vlib work

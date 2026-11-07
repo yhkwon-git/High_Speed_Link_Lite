@@ -1,0 +1,30 @@
+`verilator_config
+// Lint waivers for the RTL, each with its reason. Command (from the repository
+// root): the Verilator lint-only run with -Wall, this file first, top
+// hsl_base_die_lite, -f syn/filelist.f. A new warning still fails the lint;
+// only these exact ones are waived.
+
+// hsl_pkg spec constants used by the testbench (E12 clock table, SMOKE
+// package check) and the docs, not by the RTL: clock periods, deskew taps,
+// the pin-field LSBs.
+lint_off -rule UNUSEDPARAM -file "*rtl/include/hsl_pkg.sv" -match "*'CTRL_PERIOD_PS'*"
+lint_off -rule UNUSEDPARAM -file "*rtl/include/hsl_pkg.sv" -match "*'PHY_PERIOD_PS'*"
+lint_off -rule UNUSEDPARAM -file "*rtl/include/hsl_pkg.sv" -match "*'DESKEW_TAPS'*"
+lint_off -rule UNUSEDPARAM -file "*rtl/include/hsl_pkg.sv" -match "*'DBI_LSB'*"
+lint_off -rule UNUSEDPARAM -file "*rtl/include/hsl_pkg.sv" -match "*'RED_LSB'*"
+
+// dram_pkg is the controller repository's file, kept verbatim. RL and
+// REF_POSTPONE_MAX are for its timing checker and model; MAP_BRC is the
+// address-map value that the controller's default branch implements.
+lint_off -rule UNUSEDPARAM -file "*rtl/mc/dram_pkg.sv" -match "*'RL'*"
+lint_off -rule UNUSEDPARAM -file "*rtl/mc/dram_pkg.sv" -match "*'REF_POSTPONE_MAX'*"
+lint_off -rule UNUSEDPARAM -file "*rtl/mc/dram_pkg.sv" -match "*'MAP_BRC'*"
+
+// The reset synchronizer: its flops are reset asynchronously and its output
+// is the asynchronous reset of the rest of the chip. That is its job.
+lint_off -rule SYNCASYNCNET -file "*rtl/top/hsl_rst_sync.sv"
+
+// hsl_rd_train center(): (len - 1) / 2 is at most 15 for len <= 32, so the
+// 6-bit intermediate's top bit is always 0 (a width cast would not parse in
+// ModelSim-Altera 10.1d).
+lint_off -rule UNUSEDSIGNAL -file "*rtl/phy/hsl_rd_train.sv" -match "*'half'*"
