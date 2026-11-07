@@ -9,6 +9,7 @@
 | 리페어 설정 | `CSR_REMAP` | 웨이퍼 테스트나 레인 BIST가 찾은 배드 핀을 기록하는 자리 |
 | 레인 BIST | `CSR_LANE_BIST` | DQ 레인별 에러, 한 레인만 실패했는지, 실패 레인 번호 |
 | MBIST | `CSR_MBIST`, `CSR_MBIST_LOG`, `CSR_MBIST_BITS` | 배열 March 시험의 pass, 실패 읽기 수, 첫 실패 주소와 비트, 실패 워드 로그 16개와 넘침 |
+| ECC | `CSR_ECC`, `CSR_ECC_CNT`, `CSR_ECC_ADDR` | 정정 · 정정 불가 읽기 수, 첫 오류의 호스트 주소와 syndrome, 디코더 self-test 결과 |
 | Repair | `CSR_BIRA`, `CSR_REPAIR`, `CSR_FUSE` | 수리 가능 여부와 쓴 spare, repair 표 항목, fuse 로드 결과(정정 · 정정 불가 · 버린 항목) |
 | CKE | `pin_cke` | RESET과 그 외를 핀에서 구분 |
 
@@ -60,7 +61,7 @@
 
 aggressor와 victim은 다른 워드이고, aggressor가 주소 순서로 victim 앞에 있는 경우와 뒤에 있는 경우를 따로 센다. `tb/march_ref.py`가 같은 규칙의 참조 시뮬레이터로 기대 검출표를 내고, T13이 칩에서 같은 표를 확인한다: MATS+ 13/24, March X 17/24, March C- 24/24. MATS+는 마지막 w0 뒤에 읽기가 없어 TF ↓를 놓친다. CFid · CFst를 두 순서 모두 잡으려면 두 방향 각각에 r0,w1과 r1,w0이 있어야 한다(March C-).
 
-- 연산은 하나씩 낸다. 컨트롤러가 다른 주소의 요청 순서를 바꾸므로, 여러 개를 띄우면 aggressor 쓰기와 victim 읽기의 순서가 알고리즘과 달라진다. 쓰기 뒤에는 `q_empty` + 4클럭을 기다린다. 연산당 약 12.9클럭이다.
+- 연산은 하나씩 낸다. 컨트롤러가 다른 주소의 요청 순서를 바꾸므로, 여러 개를 띄우면 aggressor 쓰기와 victim 읽기의 순서가 알고리즘과 달라진다. 쓰기 뒤에는 `q_empty` + 4클럭을 기다린다. 연산당 약 13.2클럭이다.
 - 결과는 실패 읽기 수, 첫 실패 주소 · 비트, 실패 워드 로그(`{row offset, col}` 16개, 넘침 비트)다. 리페어 단계(BIRA)가 이 로그로 spare row · col을 고른다.
 - 링크 고장도 MBIST에 실패로 보인다(DQ 핀 stuck-at-1이면 모든 r0 실패). 배열 시험 전에 레인 BIST로 링크를 먼저 확인해야 배열 고장과 구분된다.
 - 다루지 않는 것: 워드 안 비트 사이 coupling, 이웃 패턴 고장, 데이터 보존, 주소 디코더 고장의 분리 진단. checkerboard 배경, 보존 대기 요소, 더 긴 알고리즘(March SS 등)이 필요하다.
@@ -73,6 +74,12 @@ aggressor와 victim은 다른 워드이고, aggressor가 주소 순서로 victim
 - **soft repair**: BIRA 결과를 repair 표(spare마다 16 bit)에 넣으면 배열이 그 row · col 접근을 spare로 보낸다. 재시험으로 확인한다.
 - **hard repair**: 표를 fuse 워드(SECDED (39,32))로 굽고, 리셋이 풀릴 때마다 디코더로 읽어 표를 채운다. 1 bit 오류는 정정, 2 bit 오류는 그 항목을 버리고 표시한다. 굽지 않은 fuse는 빈 표다.
 - **다루지 않는 것**: subarray별 spare, 비트 단위 fail bitmap, spare 자체의 고장(spare를 쓰기 전에 시험), JEDEC PPR 명령 순서, fuse 프로그램 조건과 읽기 마진.
+
+## ECC 시험
+
+- **디코더 self-test**: `CSR_ECC[2]`. 고정 워드의 깨끗한 codeword, 1 bit 오류 39개, 이웃 2 bit 오류 38개를 데이터 경로 디코더에 넣어 정정 데이터와 ce · ue를 확인한다. 정정 플래그를 0에 묶은 디코더는 39개 실패로 잡힌다(T15). 공개된 decoder BIST 방식(알려진 오류 패턴을 주입해 디코더 출력을 확인)을 따랐다.
+- **오류 주입**: `CSR_ECC_INJ`(데이터)와 `CSR_ECC[14:8]`(검사 비트) 마스크를 다음 쓰기 버스트 하나에 건다. 저장된 값이 틀리므로 읽기 경로(핀, FIFO, 디코더, 로그)를 끝까지 시험한다.
+- **배열 시험과의 관계**: MBIST와 repair는 ECC를 끈 상태에서 돌린다. 켜면 1 bit 배열 고장이 정정되어 보이지 않는다(T15의 stuck bit).
 
 ## 스캔
 
@@ -90,5 +97,6 @@ aggressor와 victim은 다른 워드이고, aggressor가 주소 순서로 victim
 5. 링크가 통과한 뒤 `CSR_MBIST`로 배열 영역마다 March C-를 돌리고, 실패하면 `CSR_MBIST_LOG`로 실패 워드를 읽는다.
 6. `CSR_BIRA` start로 spare를 고르고, 수리 가능하면 apply로 표에 넣은 뒤 같은 March C-로 재시험한다.
 7. 재시험이 통과하면 `CSR_FUSE` program으로 fuse에 굽고, 리셋 뒤 `CSR_FUSE`에서 로드 결과(정정 · 버린 항목 0)와 재시험 PASS를 확인한다.
+8. ECC 디코더 self-test를 돌리고, 오류 주입(1 bit · 2 bit)으로 카운터와 로그를 확인한 뒤 ECC를 켠다.
 
-2번은 T8, 3번은 T10, 5번은 T13, 6–7번은 T14가 본다. 4번의 아날로그 완료는 TRAIN done 펄스로 테스트가 대신한다.
+2번은 T8, 3번은 T10, 5번은 T13, 6–7번은 T14, 8번은 T15가 본다. 4번의 아날로그 완료는 TRAIN done 펄스로 테스트가 대신한다.

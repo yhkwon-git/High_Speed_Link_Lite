@@ -24,6 +24,9 @@ hsl_base_die_lite
       hsl_lane_shift
       hsl_tx_gear
       hsl_cdc_fifo
+      hsl_ecc
+        hsl_secded_enc x2
+        hsl_secded_dec
   hsl_dft_top
     hsl_prbs
     hsl_loopback
@@ -81,6 +84,10 @@ hsl_deskew                 블록 테스트만
 | `0x38` | BIRA | RW | 0 | 쓰기 `[0]` start(마지막 MBIST 로그, MBIST가 돌 때는 무시), `[1]` 결과를 repair 표에(수리 가능일 때만), `[2]` 표 비우기. 읽기 `[0]` busy, `[1]` done, `[2]` 수리 가능, `[5:4]` 쓴 spare row 수, `[7:6]` 쓴 spare col 수 |
 | `0x3C` | REPAIR | RW | 0 | 쓰기 `[1:0]` 읽을 표 항목(0 · 1 row spare, 2 · 3 col spare). 읽기 `[15:0]` 항목 `{[15] valid, [13:12] bank, [11:4] row(col spare는 블록 << 4), [3:0] col}`, `[17:16]` 항목 번호 |
 | `0x40` | FUSE | RW | 0 | 쓰기 `[0]` 표를 fuse에 프로그램, `[1]` fuse 다시 로드. 읽기 `[0]` busy(리셋 뒤 자동 로드 포함), `[1]` 로드 끝남, `[7:4]` 정정한 워드 수, `[11:8]` 정정 못 한 워드 수, `[15:12]` 버린 항목 |
+| `0x44` | ECC | RW | 0 | 쓰기 `[0]` enable, `[1]` 다음 쓰기 버스트에 주입(펄스), `[2]` 디코더 self-test(펄스, PHY idle), `[3]` 카운터 · 로그 지우기(펄스), `[14:8]` 뒤집을 검사 비트(`[8]` = code bit 0, `[9+k]` = code bit 2^k). 읽기 `[0]` enable, `[1]` 주입 대기, `[2]` self-test busy, `[3]` done, `[4]` pass, `[5]` 오류 기록됨, `[6]` 정정 불가였음, `[14:8]` syndrome `{전체 패리티, s[5:0]}`, `[22:16]` self-test 실패 수 |
+| `0x48` | ECC_INJ | RW | 0 | 주입 때 뒤집을 데이터 비트(32) |
+| `0x4C` | ECC_CNT | RO | 0 | `[15:0]` 정정한 읽기, `[31:16]` 정정 못 한 읽기(포화) |
+| `0x50` | ECC_ADDR | RO | 0 | `[13:0]` 첫 오류 읽기의 호스트 주소 |
 
 TIMING 필드는 8비트이고, 오른쪽이 LSB다. tRCD와 tWTR_L이 `[7:0]`에 있다. 쓰기는 무시한다. 타이밍은 컨트롤러가 상수로 지키므로, 바꾸려면 컨트롤러 저장소의 `dram_pkg`를 고친다.
 
@@ -160,7 +167,7 @@ TRAIN 쓰기는 `[0]` start, `[1]` zq_done, `[2]` wrlvl_done, `[3]` rdlvl_done, 
 
 PHY는 컨트롤러의 행 · 열 명령을 한 클럭 레지스터로 받아 그대로 낸다(`phy_en`이 0이면 NOP). 쓰기 데이터는 컨트롤러가 WR 뒤 WL(1) 클럭에 `wrdata_en`과 함께 낸다. PHY는 그 워드를 DBI → 레인 shift(4 심볼) → 레지스터에 넣고, TX 기어(`hsl_tx_gear`)가 반 주기 뒤의 PHY 엣지(E1)에서 받아 하위 beat를, 다음 E0에서 상위 beat를 낸다. E1은 컨트롤러 클럭 토글을 PHY 클럭으로 이전 값과 비교해 찾는다. 그래서 첫 beat는 WR이 핀에 나온 뒤 1.5 컨트롤러 클럭(CK 3주기)에 나간다.
 
-읽기는 RDQS 상승 엣지에서 beat 두 개를 모아 깊이 4 Gray FIFO(40 bit)에 쓰고, 컨트롤러 클럭에서 꺼내 shift와 DBI를 푼 뒤 `rddata_valid`로 컨트롤러에 넘긴다. 핀의 RD부터 `rddata_valid`까지 6 클럭이다(T12). 지연을 고정하지 않으므로 컨트롤러는 `rddata_valid`로 진행 중인 RD를 센다.
+읽기는 RDQS 상승 엣지에서 beat 두 개를 모아 깊이 4 Gray FIFO(40 bit)에 쓰고, 컨트롤러 클럭에서 꺼내 shift와 DBI를 푼 뒤 `rddata_valid`로 컨트롤러에 넘긴다. 핀의 RD부터 `rddata_valid`까지 7 클럭이다(T12, 아래 ECC의 읽기 레지스터 단 포함). 지연을 고정하지 않으므로 컨트롤러는 `rddata_valid`로 진행 중인 RD를 센다.
 
 채널 모델은 CA를 컨트롤러 클럭의 negedge에서, 쓰기 beat를 beat 가운데(`pin_ck` negedge)에서 샘플한다. 쓰기 버스트는 WR이 들어온 순서대로, WR 때 열려 있던 row에 저장한다. 읽기 beat는 RD 뒤 `RL_RDQS` = 3 RDQS 주기에 RDQS 하강 엣지에서 낸다.
 
@@ -206,3 +213,18 @@ FUSE:   리셋 뒤 / load: READ (fz_rd) --> TAKE (fz_rdata 레지스터) --> DEC
 - spare 슬롯은 쓴 순서대로 채운다(row 0 → 1, col 0 → 1). 순서 `ord`의 bit t가 1이면 t번째로 쓰는 spare가 row다. 남은 spare 수 L에 대해 bit L 이상이 0이고 1의 개수가 남은 row 수인 순서만 시도한다.
 - repair 표는 데이터패스 리셋에 들어 있다. soft reset도 표를 비우고, 이어서 fuse 로드가 다시 채운다.
 - fuse 포트: `fz_rd`와 `fz_addr` 다음 클럭에 `fz_rdata`. `fz_pgm`은 `fz_wdata`를 OR로 굽는다. SECDED (39,32)는 확장 Hamming이다. 비트 0이 전체 패리티이고, 위치 2^k(1, 2, 4, 8, 16, 32)가 체크 비트, 나머지 32개가 데이터다. 항목은 데이터 `[15:0]`에 들어간다.
+
+## ECC
+
+```text
+쓰기  t:   wrdata_en, 원시 워드(payload) ─▶ tx_raw, DBI · shift ─▶ tx_word, 주입 비트 ─▶ tx_flip
+      t+½: E1 ─▶ TX 기어: {ECC(tx_raw) [3:0], tx_word ^ tx_flip [19:0]}, 다음 E0에 [7:4] · [39:20]
+읽기:     RDQS beat 0 ─▶ rx_lo, beat 1 ─▶ rx_burst ─(다음 RDQS 엣지)─▶ FIFO (48 bit)
+          FIFO ─▶ unshift · DBI 복원 ─▶ s1 레지스터(워드, 검사 비트, RD 주소) ─▶ 디코더 ─▶ rddata
+          카운터 · 로그는 디코더 플래그를 한 클럭 뒤에
+```
+
+- ECC 핀 beat: 2 핀 × DDR_BITS UI, UI 0이 아래 비트. 버스트의 8 bit 중 `[6:0]`이 검사 비트(`[0]` 전체 패리티, `[k+1]` code bit 2^k), `[7]`은 0이다.
+- RD 추적 FIFO(깊이 8): CA 레지스터의 ACT로 bank마다 열린 row를 기억하고, CA 레지스터의 RD마다 `host_addr(bank, 열린 row, col)`을 넣는다. 읽기 반환(FIFO pop)마다 하나 꺼내 s1 레지스터로 간다. 루프백 RD는 CA를 내지 않으므로 넣지 않는다.
+- 루프백 RD는 레지스터한 명령(`lb_rd_q`)으로 s1에 `lb_data`를 넣고, 그 클럭에는 FIFO를 꺼내지 않는다. 루프백은 핀으로 나간 RD가 없을 때만 쓴다. 루프백 응답은 디코더를 거치지 않는다.
+- self-test는 s1 레지스터에 codeword를 넣는다(`st_load`). s1_v가 서지 않으므로 컨트롤러로 응답이 나가지 않는다.

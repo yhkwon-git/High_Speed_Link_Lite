@@ -14,10 +14,11 @@ import sys
 GROUPS = [
     ('Memory Controller (mem_ctrl)', ('mem_ctrl', 'mc_')),
     ('PHY digital', ('hsl_phy_top', 'hsl_phy_mis', 'hsl_dbi', 'hsl_lane_shift', 'hsl_tx_gear',
-                     'hsl_cdc_fifo', 'hsl_phy_clk')),
+                     'hsl_cdc_fifo', 'hsl_phy_clk', 'hsl_ecc')),
     ('Read leveling (hsl_rd_train)', ('hsl_rd_train',)),
     ('DFT', ('hsl_dft_top', 'hsl_prbs', 'hsl_loopback', 'hsl_err_cnt', 'hsl_lane_bist', 'hsl_mbist',
-             'hsl_bira', 'hsl_repair', 'hsl_secded')),
+             'hsl_bira', 'hsl_repair')),
+    ('SECDED codecs (fuses, data ECC)', ('hsl_secded',)),
     ('CSR', ('hsl_csr',)),
     ('Other (top, training FSM, reset sync)', ('hsl_base_die_lite', 'hsl_training_fsm', 'hsl_rst_sync')),
 ]
