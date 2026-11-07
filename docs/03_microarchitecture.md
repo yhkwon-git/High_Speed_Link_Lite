@@ -5,6 +5,7 @@
 ```text
 hsl_base_die_lite
   hsl_rst_sync
+  hsl_w1500
   hsl_csr
   hsl_training_fsm
   hsl_rd_train
@@ -242,3 +243,10 @@ FUSE:   리셋 뒤 / load: READ (fz_rd) --> TAKE (fz_rdata 레지스터) --> DEC
 - 멈춤: trigger 항목을 쓰면 `post_left = post`. 그 뒤 항목마다 줄이고 마지막 항목을 쓰면 기록을 멈춘다(`post = 0`이면 trigger 항목에서 바로).
 - 읽는 순서: 한 바퀴 돌았으면 다음 항목 번호(`TRACE[7:4]`)가 가장 오래된 항목이다.
 - 데이터패스 리셋에 들어 있다(soft reset으로 지워짐).
+
+## IEEE 1500 방식 포트
+
+- 입력 `{wrck, wrstn, selectwir, shiftwr, capturewr, updatewr, wsi}`는 clk로 두 번 동기화한다. WRCK의 상승 · 하강 엣지를 clk에서 찾는다(WRCK ≥ 8 clk 주기).
+- 상승 엣지: SelectWIR이면 WIR 쪽, 아니면 WIR가 고른 WDR에서 CaptureWR(병렬 로드) 또는 ShiftWR(LSB로 내보내고 MSB로 WSI). 하강 엣지: UpdateWR이면 WIR 갱신 또는 CSR WDR을 update 레지스터로, 그리고 WSO를 선택된 레지스터의 bit 0으로.
+- CSR 접근: update 뒤 쓰기는 1클럭, 읽기는 2클럭(주소 → 레지스터 읽기 데이터) 동안 `bus_act`로 CSR 버스를 잡는다. 읽은 값은 `rd_hold`에 남아 다음 capture로 나간다.
+- 리셋은 `rst_sync_n`(soft reset 밖), WRSTN이 낮으면 WIR는 BYPASS, 진행 중인 접근은 멈춘다.

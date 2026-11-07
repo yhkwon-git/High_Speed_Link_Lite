@@ -49,6 +49,7 @@
 
 디지털이 책임지는 값:
 
+- 1500 시험 포트 `wrck`, `wrstn`, `selectwir`, `shiftwr`, `capturewr`, `updatewr`, `wsi`, `wso`: 칩 안에서 clk로 동기화하므로 WRCK는 클럭 트리가 필요 없는 느린 신호다(clk의 1/8 이하)
 - `pin_cke`, 행 · 열 CA(`pin_rca`, `pin_cca`), 쓰기 beat(`pin_tx_beat`, `pin_tx_ecc`, `pin_tx_dqs`, `pin_tx_dv`)의 논리값과 `rx_dly_code`
 - 쓰기 beat가 없으면 `pin_tx_beat = 0`, `pin_tx_dv = 0`(드라이버 enable의 근거)
 - `pin_ck`의 게이트(`phy_en`, PHY 하강 엣지에서 잡은 enable)

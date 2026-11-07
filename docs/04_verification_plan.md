@@ -46,6 +46,7 @@
 | T14 | Repair. A: 고장 워드 8개에서 BIRA 할당(row +1 · +6, col 5)과 표 값, soft repair 뒤 재시험 PASS와 spare 접근 수. B: fuse 프로그램 → 표 비움 → 칩 리셋 → fuse 로드가 표를 되살림, 재시험 PASS. C: fuse 워드 1 bit 반전 정정 · 2 bit 반전 항목 버림, 버린 col의 워드가 다시 실패. D: 대각선 5워드와 넘친 로그는 수리 불가. E: greedy로 못 고치는 맵을 고침. F: 랜덤 맵 12개(3–8워드)에서 BIRA 상태와 표가 TB 참조와 같고, 수리 가능하면 재시험 PASS |
 | T15 | ECC. 디코더 self-test PASS와, 정정 플래그를 0으로 강제한 디코더에서 FAIL(39개). ECC on: 깨끗한 16워드 오류 0. 주입한 데이터 1 bit · 검사 비트 1 bit는 정정, 첫 오류의 호스트 주소와 syndrome이 기대값. 2 bit는 정정 불가로 세고 데이터는 그대로. 배열 SA0 1 bit는 정정. ECC off에서 같은 워드는 원래 값, 셈 없음. clear 뒤 카운터 · 로그 0 |
 | T16 | DFD. 명령 카운터가 채널 모델의 수와 같음(REFpb는 읽는 순간 차이로 ±1), MISR이 TB 참조 함수와 같음. 수동 trigger: trigger 표시 하나, 그 뒤 3항목, 멈춤, timestamp 순서. 디버그 사례: 채널 모델의 `bug_refdis`(REFpb 뒤 16클럭 안의 RD에서 bit 5 반전)를 켜고 ECC 정정 오류로 증상 확인 → 첫 오류 주소의 bank만 읽으며 trace(정정 오류 trigger, bank 필터) 3번 → 매번 REFpb 뒤 16클럭 안에 RD가 있는지 TB가 trace를 해석해 확인 → 버그를 끄면 오류 0 |
+| T17 | 1500 포트. WRSTN 리셋 뒤 WIR=ID에서 32 bit가 `HSL_ID`, WIR capture가 현재 명령, WBY가 8 bit 패턴을 한 비트 늦춤, CSR WDR로 ID CSR 읽기(scan 두 번), MBIST March C-를 CSR WDR 쓰기로 시작하고 같은 WDR 읽기로 done까지 폴링, 결과가 호스트 CSR 읽기와 같음. WRCK 20 ns |
 
 블록 테스트 E7(TX 기어), E9(deskew), E11(PRBS seed)은 `tb_hsl_blocks`가 같은 실행 안에서 돈다. 이전 in-order 컨트롤러의 블록 테스트(T2 뱅크 FSM, T3 스케줄러)는 컨트롤러 교체와 함께 지웠고, 번호는 칩 테스트가 이어받았다.
 
