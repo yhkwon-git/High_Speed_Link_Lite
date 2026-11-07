@@ -21,11 +21,11 @@ SK hynix HBM Digital Design (RTL Design) 지원 · 권용현
 
 | 설계 범위 | 회귀 | 커버리지 | 면적 | STA |
 | :---: | :---: | :---: | :---: | :---: |
-| **MC · PHY · DFT** | **18 / 18 PASS** | **Line 95.8%**<br>**Branch 89.1%** | **32,184 µm²**<br>**2,801 FF** | **HSL 로직 통과**<br>**MC 467 MHz** |
-| RTL 27개 모듈<br>2,648줄 (주석 제외) | SMOKE · T1–T12<br>E7 · E9 · E11 | Toggle 83.7% | Nangate45<br>배선 없음 | 800 MHz · 1.6 GHz<br>RDQS · CDC |
+| **MC · PHY · DFT** | **19 / 19 PASS** | **Line 96.0%**<br>**Branch 89.4%** | **35,610 µm²**<br>**3,095 FF** | **HSL 로직 통과**<br>**MC 463 MHz** |
+| RTL 28개 모듈<br>3,030줄 (주석 제외) | SMOKE · T1–T13<br>E7 · E9 · E11 | Toggle 81.8% | Nangate45<br>배선 없음 | 800 MHz · 1.6 GHz<br>RDQS · CDC |
 
 > [!NOTE]
-> 표와 아래 결과는 commit `8af801b` 기준이다(Verilator 5.052, ModelSim-Altera 10.1d 모두 18/18 PASS). `0193c04`에서 메모리 컨트롤러를 [Mini DRAM Controller](https://github.com/yhkwon-git/mini-dram-controller) v4로 바꿔 PHY와 DFI 형태로 붙이고 저속 bypass framer를 없앴으며, `8af801b`에서 칩 STA(세 클럭과 CDC)를 더하고 STA가 짚은 HSL 경로를 고쳤다. PDF는 DBI-AC까지 담은 `631d3bd` 판이고(3–20쪽은 `4feb39f` 측정), `222bec3`에서 2쪽의 전제 문구만 바꿨다. 그 뒤의 레인 리페어, 읽기 레벨링, mission 데이터패스, 컨트롤러 교체, STA는 이 README에만 있다.
+> 표와 아래 결과는 commit `f018966` 기준이다(Verilator 5.052, ModelSim-Altera 10.1d 모두 19/19 PASS). `0193c04`에서 메모리 컨트롤러를 [Mini DRAM Controller](https://github.com/yhkwon-git/mini-dram-controller) v4로 바꿔 PHY와 DFI 형태로 붙이고 저속 bypass framer를 없앴으며, `8af801b`에서 칩 STA(세 클럭과 CDC)를 더하고 STA가 짚은 HSL 경로를 고쳤으며, `f018966`에서 DRAM 배열의 March MBIST를 더했다. 절마다 적은 commit은 그 숫자를 잰 commit이다. PDF는 DBI-AC까지 담은 `631d3bd` 판이고(3–20쪽은 `4feb39f` 측정), `222bec3`에서 2쪽의 전제 문구만 바꿨다. 그 뒤의 레인 리페어, 읽기 레벨링, mission 데이터패스, 컨트롤러 교체, STA, MBIST는 이 README에만 있다.
 
 ## 개요
 
@@ -46,8 +46,8 @@ HBM base die는 스택 맨 아래의 로직 다이로, 호스트 SoC와 DRAM cor
 | --- | --- | --- |
 | Memory Controller | [Mini DRAM Controller](https://github.com/yhkwon-git/mini-dram-controller) v4 RTL(그 저장소 `44a0bb3`과 같은 파일). 읽기 8 + 쓰기 8 큐, FR-FCFS, 행 · 열 명령 버스에 매 클럭 하나씩, bank group 2 × 2, per-bank refresh와 RFM, posted write, 쓰기 큐 forwarding, in-order 응답 | [`rtl/mc/`](rtl/mc/) |
 | PHY digital | DFI 형태 입력(행 · 열 명령, WL 뒤 쓰기 데이터, `rddata_valid`). 행 · 열 CA 핀, 동기 2:1 TX 기어 → 1.6 GHz beat + WDQS, RDQS 캡처 → Gray FIFO, DBI(DC · AC), shift 방식 레인 리페어(spare 핀 1개, 핀마다 2:1 mux), 읽기 레벨링(레인별 지연선 코드 스윕 → eye 중앙), 0–4 tap deskew(블록만) | [`rtl/phy/`](rtl/phy/) |
-| Control | CSR 11개, 트레이닝 FSM(9개 상태, done 펄스 대기), 리셋 동기화기(비동기 assert, 2-FF 동기 deassert), 호스트 · BIST 요청 포트 mux | [`rtl/ctrl/`](rtl/ctrl/), [`rtl/top/`](rtl/top/) |
-| DFT / DFD | PRBS7, 병렬 루프백, 16 bit 포화 에러 카운터, 레인 BIST(컨트롤러 요청 포트로 PRBS7 16워드를 쓰고 큐가 빈 뒤 읽어 DQ 레인별 고장 검출), STATUS · ERRCNT · REMAP · LANE_BIST 관측점 | [`rtl/dft/`](rtl/dft/) |
+| Control | CSR 14개, 트레이닝 FSM(9개 상태, done 펄스 대기), 리셋 동기화기(비동기 assert, 2-FF 동기 deassert), 호스트 · 테스트 엔진 요청 포트 mux | [`rtl/ctrl/`](rtl/ctrl/), [`rtl/top/`](rtl/top/) |
+| DFT / DFD | PRBS7, 병렬 루프백, 16 bit 포화 에러 카운터, 레인 BIST(컨트롤러 요청 포트로 PRBS7 16워드를 쓰고 큐가 빈 뒤 읽어 DQ 레인별 고장 검출), MBIST(같은 포트로 DRAM 배열에 MATS+ · March X · March C-, 실패 워드 로그 16개), STATUS · ERRCNT · REMAP · LANE_BIST · MBIST 관측점 | [`rtl/dft/`](rtl/dft/) |
 | PD 인계 | SDC(클럭, 생성 클럭, I/O delay, CDC `set_max_delay`), 클럭 · 리셋 · CDC · 핀 · floorplan 가이드 | [`syn/`](syn/), [`docs/05_pd_guide.md`](docs/05_pd_guide.md) |
 | 검증 | 칩 레벨 테스트, 블록 테스트, DRAM 채널 모델(핀에서 프로토콜과 같은 뱅크 타이밍 검사), 모든 호스트 응답을 참조 메모리와 비교하는 스코어보드를 한 번에 도는 회귀 | [`tb/`](tb/), [`sim/`](sim/) |
 
@@ -60,7 +60,7 @@ flowchart TB
     CTRL["<b>Control</b><br/>rst_sync · csr · training_fsm"]
     MC["<b>Memory Controller</b><br/>mem_ctrl (Mini DRAM Controller v4)<br/>queue 8 + 8 · FR-FCFS · refresh · 800 MHz"]
     PHY["<b>PHY digital</b><br/>dbi · phy_mis · lane_shift<br/>rd_train"]
-    DFT["<b>DFT / DFD</b><br/>prbs7 · loopback · err_cnt<br/>lane_bist"]
+    DFT["<b>DFT / DFD</b><br/>prbs7 · loopback · err_cnt<br/>lane_bist · mbist"]
     CDC["<b>clk_phy</b> 1.6 GHz · <b>RDQS</b><br/>tx_gear · RDQS 캡처 · Gray FIFO"]
   end
   DRAM[("DRAM channel model · dram_channel_behav")]
@@ -70,7 +70,7 @@ flowchart TB
   CTRL -.->|"dbi · repair · loopback"| PHY
   MC <-->|"DFI: rcmd · ccmd · wrdata_en / rddata_valid"| PHY
   DFT <-.->|"prbs · compare"| PHY
-  DFT -.->|"lane BIST: 요청 포트 사용"| MC
+  DFT -.->|"lane BIST · MBIST: 요청 포트 사용"| MC
   PHY -.- CDC
   PHY <-->|"CK · RCA · CCA · beat + WDQS / RDQS"| DRAM
   PHY -.->|"rx_dly_code: 레인별 지연선 코드"| DRAM
@@ -80,15 +80,15 @@ flowchart TB
 - **명령**: 스케줄러가 매 클럭 행 명령(ACT · PRE · REFpb) 하나와 열 명령(RD · WR) 하나를 고른다. PHY는 한 클럭 뒤 `pin_rca = {cmd, bank, row}`, `pin_cca = {cmd, bank, col, ap}`로 내고, 코드는 컨트롤러의 `dram_cmd_e` 그대로다. 열 명령은 row를 싣지 않고 그 뱅크의 열린 row를 쓴다
 - **쓰기 데이터**: WR 뒤 WL(1) 클럭에 `wrdata_en` → DBI(DC 또는 AC) → 레인 shift(4 심볼) → 동기 2:1 TX 기어 → `clk_phy` beat 두 개(beat당 2 UI × 10핀)와 WDQS
 - **읽기 데이터**: RDQS(= CK + tDQSCK)로 beat 두 개를 받아 Gray FIFO로 컨트롤러 클럭에 넘기고, shift 복원과 DBI 복원 뒤 `rddata_valid`. 지연을 고정하지 않아도 컨트롤러가 `rddata_valid`로 진행 중인 RD를 센다. 루프백이 켜져 있으면 RD를 핀으로 내지 않고 마지막 쓰기 버스트(`lb_hold`)로 답한다
-- **포트**: 요청 포트는 MISSION이면서 PHY가 켜져 있을 때(`CTRL.phy_en`)만 열린다. CK는 PHY가 켜져 있을 때만 `pin_ck`로 나간다. 레인 BIST가 도는 동안은 BIST가 포트를 쓰고 응답을 모두 가져간다. deskew는 아직 경로에 없고 블록 테스트만 한다
+- **포트**: 요청 포트는 MISSION이면서 PHY가 켜져 있을 때(`CTRL.phy_en`)만 열린다. CK는 PHY가 켜져 있을 때만 `pin_ck`로 나간다. 레인 BIST나 MBIST가 도는 동안은 그 엔진이 포트를 쓰고 응답을 모두 가져간다(한 번에 하나). deskew는 아직 경로에 없고 블록 테스트만 한다
 
 <details>
-<summary>모듈 계층 (27개 모듈 + 패키지 2개)</summary>
+<summary>모듈 계층 (28개 모듈 + 패키지 2개)</summary>
 
 ```text
 hsl_base_die_lite
 ├─ hsl_rst_sync           비동기 assert, 2-FF 동기 deassert
-├─ hsl_csr                CSR 11개, ID "HSL1"
+├─ hsl_csr                CSR 14개, ID "HSL1"
 ├─ hsl_training_fsm       RESET → … → MISSION
 ├─ hsl_rd_train           읽기 레벨링: 레인별 지연선 코드 스윕, eye 중앙 (레인 BIST로 판정)
 ├─ mem_ctrl               Mini DRAM Controller v4 (그 저장소 44a0bb3과 같은 파일)
@@ -111,7 +111,8 @@ hsl_base_die_lite
    ├─ hsl_prbs            x⁷ + x⁶ + 1
    ├─ hsl_loopback        병렬 루프백
    ├─ hsl_err_cnt         16 bit 포화 카운터
-   └─ hsl_lane_bist       레인 BIST (요청 포트로 PRBS7 쓰기 → 큐 비움 → 읽기)
+   ├─ hsl_lane_bist       레인 BIST (요청 포트로 PRBS7 쓰기 → 큐 비움 → 읽기)
+   └─ hsl_mbist           March MBIST (MATS+ · March X · March C-, 실패 워드 로그)
 hsl_deskew                레인별 0–4 tap (블록 테스트만)
 ```
 
@@ -132,6 +133,7 @@ hsl_deskew                레인별 0–4 tap (블록 테스트만)
 | 레인 리페어는 shift 방식: 고장 핀부터 위쪽 레인을 한 칸씩 spare(RED) 쪽으로 | 핀마다 자기 레인과 아래 레인 중 하나를 고르는 2:1 mux라 배선이 이웃 핀까지만 간다. 치환 방식은 모든 레인에서 spare까지 경로가 필요하다 | 고장 핀 위의 레인 번호와 핀 번호가 어긋난다 → 양 끝(PHY, DRAM)이 같은 설정을 가져야 한다. 모델은 mode register 대신 입력으로 받는다 |
 | 읽기 레벨링: 지연선은 아날로그 모델로 두고 디지털은 코드만 낸다 | 디지털이 책임지는 것은 코드 스윕, 레인별 판정, 가장 긴 통과 구간 찾기, 중앙 선택이다. 지연선과 샘플러는 채널 모델이 코드에 따라 흉내 낸다(창 밖에서는 이웃 UI를 읽음) | 판정에 레인 BIST를 재사용해 코드마다 BIST 한 번(32 코드). 레인당 상태 27 FF. 쓰기 방향 레벨링은 없다 |
 | 레인 BIST는 컨트롤러 요청 포트로 16워드를 쓰고, 큐가 빌 때까지 기다린 뒤 읽음 | 뱅크 타이밍, refresh, 버스 전환은 컨트롤러가 지킨다. 쓰기가 큐에 남은 채 읽으면 컨트롤러가 쓰기 큐에서 바로 답해 링크를 거치지 않으므로, 컨트롤러에 `q_empty`를 내어 그때까지 기다린다. 주소는 CA 핀으로 가므로 16 컬럼을 써도 DQ 고장이 주소에 섞이지 않는다 | BIST 중에는 호스트 포트를 막고 응답을 BIST가 가져가므로, 호스트가 조용하고 응답을 다 받은 상태에서 시작해야 한다. DBI 레인 고장은 DBI를 끈 상태에서 양방향 반전이 상쇄돼 데이터에 드러나지 않는다 |
+| MBIST는 컨트롤러를 거쳐 연산을 하나씩 낸다(쓰기 뒤에는 `q_empty` + 4클럭) | 배열 앞에 컨트롤러가 있어야 refresh와 뱅크 타이밍이 지켜진다. 그런데 컨트롤러는 다른 주소의 요청 순서를 바꾸므로, 여러 개를 띄우면 배열이 받는 순서가 March 순서와 달라지고 coupling fault는 aggressor 쓰기가 victim 읽기보다 먼저 닿아야 잡힌다 | 연산당 약 12.9클럭(March C- 64워드 640연산 8,239클럭). 실제 HBM의 MBIST는 core die 쪽에서 배열을 직접 몬다. 이 모델의 MBIST는 base die에서 컨트롤러 경계를 검사하는 위치다 |
 | DBI는 DC 방식(beat의 1이 4개를 넘으면 반전)으로 시작하고, AC 방식(직전 UI 대비 DQ 전이가 4개를 넘으면 반전)을 CSR로 고르게 추가 | DC는 high 개수를 줄여 high에서 종단 전류가 흐르는 I/O에 맞다. HBM처럼 종단이 없는 짧은 채널에서는 전이 수가 스위칭 전력과 SSO를 정하므로 AC가 맞다 | AC는 이전 beat의 반전 여부에 묶인 직렬 체인이다 → 원시 beat끼리 전이를 미리 세어 beat당 2:1 mux 하나로 줄임([DBI-AC](#dbi-ac-off--dc--ac-비교)) |
 
 ## 스펙 요약
@@ -170,6 +172,9 @@ beats_per_burst = BL ÷ DDR_BITS  = 2   → PHY beat 20 bit (2 UI × 10핀)
 | `0x20` | TIMING1 | RO | `{tRFC, tRTP, tWR, tWTR_L}`, 컨트롤러 상수 |
 | `0x24` | LANE_BIST | RW | 쓰기: `[0]` start, `[5:4]` bank, `[15:8]` row(그 bank · row의 컬럼 0–15를 씀). 읽기: `[0]` busy, `[1]` done, `[2]` pass, `[3]` 한 레인만 실패, `[7:4]` 실패 레인, `[15:8]` 레인별 에러, `[20:16]` 불일치 버스트 수 |
 | `0x28` | RDTRAIN | RW | 쓰기: `[0]` start, `[6:4]` 읽어 볼 레인. 읽기: `[0]` busy, `[1]` done, `[2]` 모든 레인에서 eye 찾음, `[6:4]` 레인, `[12:8]` 그 레인의 코드, `[20:16]` eye 시작, `[29:24]` eye 폭 |
+| `0x2C` | MBIST | RW | 쓰기: `[0]` start, `[2:1]` 알고리즘(0 MATS+, 1 March X, 2 March C-), `[5:4]` bank, `[15:8]` 첫 row, `[19:16]` row 수 − 1, `[22:20]` log2 컬럼 수(0–4). 읽기: `[0]` busy, `[1]` done, `[2]` pass, `[3]` 로그 넘침, `[8:4]` 로그의 실패 워드 수, `[31:16]` 실패 읽기 수 |
+| `0x30` | MBIST_LOG | RW | 쓰기: `[3:0]` 읽을 로그 항목. 읽기: `[13:0]` 첫 실패 읽기의 호스트 주소, `[23:16]` 그 항목 `{row offset, col}`, `[27:24]` 항목 번호 |
+| `0x34` | MBIST_BITS | RO | 첫 실패 읽기에서 다른 비트 |
 
 읽기 데이터는 레지스터에서 나온다: 주소를 준 다음 클럭 엣지 뒤에 유효하다. 비트 단위 정의는 [`docs/03_microarchitecture.md`](docs/03_microarchitecture.md)에 있다.
 
@@ -200,6 +205,7 @@ beats_per_burst = BL ÷ DDR_BITS  = 2   → PHY beat 20 bit (2 UI × 10핀)
 | T10 | 레인 BIST · 리페어 | 칩과 채널 모델 사이 링크 핀에 stuck-at 주입 → BIST가 그 레인만 표시 → REMAP과 모델 설정 → 재검사 PASS. DQ 8레인 × stuck 0/1 = 16/16 검출, 16/16 복구. 리페어된 링크로 DBI-AC 트래픽 읽기 16개 일치. 두 레인 고장은 수리 불가로 표시 |
 | T11 | 읽기 레벨링 | 레인마다 eye(통과하는 지연선 코드 구간)를 주고 학습: 고정 eye 한 번, 랜덤 eye 한 번 모두 8레인의 eye 시작 · 폭이 정확하고 코드가 중앙. 학습 전에는 eye가 기본 코드 16을 벗어난 레인만 BIST 실패, 학습 후 BIST PASS와 호스트 트래픽 읽기 16개 일치. 닫힌 eye는 실패로 표시 |
 | T12 | mission 데이터패스 | 이전 in-order MC로 쟀던 WR 16 + RD 16(162 → 77 클럭), 열린 row 읽기 하나의 지연(요청 → 응답 9, 핀의 RD → `rddata_valid` 6 클럭), bank group 두 개에 걸친 읽기 32개, DBI-AC 양방향 + lane 5 stuck-at-1 리페어 트래픽, 채널 모델 오류 0 |
+| T13 | MBIST | 고장 없음: 세 알고리즘 PASS. 배열 고장 24개 × 알고리즘 3개: 검출 집합이 참조 시뮬레이터(`tb/march_ref.py`)와 같고(13 · 17 · 24), 검출된 고장은 첫 실패가 victim 워드와 비트. 4 × 16 영역의 고장 워드 3개가 처음 실패한 순서로 로그에 남음(실패 읽기 7개). DQ 핀 stuck-at-1은 모든 r0에서 실패해 로그 16개가 차고 넘침 표시. 한 엔진이 도는 동안 다른 엔진의 start는 기다렸다가 돌고, 둘이 함께 busy인 클럭 0 |
 | E7 | TX 기어 | 32 bit 두 워드가 연속 PHY 클럭 네 beat로(`C3D4`, `A1B2`, `7788`, `5566`) |
 | E9 | Deskew | tap 0 통과, tap 2 지연 |
 | E11 | PRBS seed | 리셋 seed `5A`의 첫 비트 1, seed 0 load 무시 |
@@ -237,23 +243,29 @@ beats_per_burst = BL ÷ DDR_BITS  = 2   → PHY beat 20 bit (2 UI × 10핀)
 [T12] 32 reads over two bank groups: 76 cycles from the first request to the last response (4 RDs in flight at most)
 [T12] channel model, whole run: 1571 ACT, 1567 PRE, 3290 RD, 5043 WR, 1391 REFpb; errors: protocol 0, timing 0, read before its write data 0, WDQS 0
 [T12] PASS
+[T13] no fault, 8 words: MATS+ 40 ops in 507 clocks, March X 48 in 611, March C- 80 in 1021
+[T13] fail log: 3 words of 64 (7 failing reads), entries {row,col} 03 29 3F; March C- on 64 words: 640 ops in 8239 clocks
+[T13] DQ pin 5 stuck at 1: 192 failing reads, log full (16) with overflow, first bits 20202020
+[T13] a start during the other engine's run waits for it: both orders ran and passed, 0 clocks with both busy
+[T13] detected: MATS+ 13/24, March X 17/24, March C- 24/24 (reference 13, 17, 24)
+[T13] PASS
 [SB] 4070 host requests, 1170 reads compared against the reference memory
 [ALL] PASS
 ```
 
-<sub>commit `8af801b`의 Verilator 출력이다. ModelSim은 난수 생성기가 달라 T3과 T11 랜덤 회차의 수만 다르고(예: T3 읽기 994개, row hit 35.8%), 나머지 줄은 같다. T2의 `PRE +11 ACT`는 그 사이에 bank 1의 REFpb(tRFCpb 8)가 끼어서다.</sub>
+<sub>commit `f018966`의 Verilator 출력이다. T13의 고장별 24줄은 [MBIST](#mbist-march-알고리즘과-검출표) 절에 표로 옮겼다. ModelSim은 난수 생성기가 달라 T3과 T11 랜덤 회차의 수만 다르고(예: T3 읽기 994개, row hit 35.8%), 나머지 줄은 같다. T2의 `PRE +11 ACT`는 그 사이에 bank 1의 REFpb(tRFCpb 8)가 끼어서다.</sub>
 
 ![T4 파형. 쓰기 요청은 다음 클럭에 응답하고, 바로 뒤 읽기는 쓰기 큐에서 답한다. 쓰기가 나간 뒤의 읽기는 핀의 RD, RDQS beat, rddata_valid를 거쳐 응답한다](docs/images/wave_t4_channel.png)
 
 <sub>T4, commit `0193c04`의 Verilator VCD(가운데 idle 7.1 ns는 생략). ① 쓰기 요청(호스트 주소 `1D1` = bank 2, row 07, col 1)을 받은 다음 클럭에 응답한다(posted). ② 바로 뒤 같은 주소 읽기는 쓰기 큐에서 `A5A5_5A5A`로 답하고 `pin_cca`에는 RD가 없다. 같은 클럭에 ACT b2 r07이 `pin_rca`로 나간다. ③ tRCD 3 클럭 뒤 WR b2 c1, 다음 클럭에 `wrdata_en`, 이어서 TX beat 두 개(UI 순서 `5A 5A A5 A5`)와 WDQS. 그사이 per-bank refresh(REFpb b0, b1)가 행 버스로 나간다. ④ 쓰기가 나간 뒤 같은 주소를 다시 읽으면 RD b2 c1이 핀으로 나가고, ⑤ RDQS beat 두 개가 Gray FIFO를 지나 핀의 RD 6 클럭 뒤 `rddata_valid`, 요청 9 클럭 뒤 응답이다.</sub>
 
 <details>
-<summary>모듈별 코드 커버리지 (commit <code>8af801b</code>, Verilator)</summary>
+<summary>모듈별 코드 커버리지 (commit <code>f018966</code>, Verilator)</summary>
 
 | 모듈 | Line | Branch | Toggle |
 | --- | ---: | ---: | ---: |
 | mem_ctrl (top) | 100.0% | 100.0% | 85.8% |
-| mc_queue | 100.0% | 100.0% | 79.6% |
+| mc_queue | 100.0% | 100.0% | 80.7% |
 | mc_xage | 100.0% | 100.0% | 100.0% |
 | mc_wdrain | 100.0% | 100.0% | 96.2% |
 | mc_bank | 100.0% | 88.5% | 86.2% |
@@ -264,21 +276,22 @@ beats_per_burst = BL ÷ DDR_BITS  = 2   → PHY beat 20 bit (2 UI × 10핀)
 | phy_top | 100.0% | 100.0% | 95.5% |
 | phy_mis | 100.0% | 100.0% | 96.0% |
 | tx_gear | 100.0% | 100.0% | 83.6% |
-| cdc_fifo | 100.0% | 100.0% | 64.1% |
+| cdc_fifo | 100.0% | 100.0% | 64.2% |
 | lane_shift | – | 100.0% | 100.0% |
 | dbi | 100.0% | 75.0% | 100.0% |
 | rd_train | 93.3% | 90.9% | 76.2% |
 | deskew | 100.0% | 83.3% | 23.4% |
-| csr | 96.2% | 100.0% | 71.1% |
+| csr | 96.8% | 100.0% | 67.6% |
 | training_fsm | 92.9% | 100.0% | 75.0% |
 | rst_sync | 100.0% | 100.0% | 60.0% |
-| lane_bist | 100.0% | 100.0% | 90.4% |
+| lane_bist | 100.0% | 100.0% | 93.6% |
+| mbist | 96.7% | 89.1% | 59.1% |
 | prbs | 93.8% | 83.3% | 95.2% |
 | err_cnt | 66.7% | 100.0% | 23.8% |
 | loopback | – | 100.0% | 67.0% |
-| **전체 (`rtl/` 27개 모듈)** | **95.8%** | **89.1%** | **83.7%** |
+| **전체 (`rtl/` 28개 모듈)** | **96.0%** | **89.4%** | **81.8%** |
 
-Verilator `--coverage-line --coverage-toggle`로 회귀 전체를 돌리고 `rtl/` 파일만 셌다. 같은 모듈의 인스턴스는 합쳤다(어느 인스턴스든 닿으면 커버). 표에 없는 top, dft_top, phy_clk도 전체에 들어 있다. 이전 in-order MC 시절(`4feb39f`)에는 87.5 / 96.6 / 56.6%였고, toggle은 T3의 랜덤 주소 · 데이터로 올랐다. `prbs`의 branch는 출력 레지스터 파라미터(`REG_OUT`)의 두 갈래가 인스턴스마다 하나씩만 쓰여 낮다.
+Verilator `--coverage-line --coverage-toggle`로 회귀 전체를 돌리고 `rtl/` 파일만 셌다. 같은 모듈의 인스턴스는 합쳤다(어느 인스턴스든 닿으면 커버). 표에 없는 top, dft_top, phy_clk도 전체에 들어 있다. 이전 in-order MC 시절(`4feb39f`)에는 87.5 / 96.6 / 56.6%였고, toggle은 T3의 랜덤 주소 · 데이터로 올랐다. `prbs`의 branch는 출력 레지스터 파라미터(`REG_OUT`)의 두 갈래가 인스턴스마다 하나씩만 쓰여 낮다. `8af801b`(MBIST 전)에는 95.8 / 89.1 / 83.7%였고, toggle이 내려간 것은 MBIST의 넓은 레지스터(첫 실패 비트 32개, 주소, 로그)가 solid background 시험에서 몇 가지 값만 지나기 때문이다(`mbist` toggle 59.1%).
 
 </details>
 
@@ -385,21 +398,56 @@ shift는 `hsl_phy_mis`에서 버스트의 네 심볼 모두에 걸린다(쓰기�
 
 <sub>`syn/ppa_block.sh`. 치환 방식은 버스트(4 beat × 8 bit) 단계에서 beat마다 인스턴스가 하나씩 필요했고 RED로 옮길 비트를 고르는 mux가 framer에 따로 있었다. shift는 UI 심볼 하나에 걸어 한 벌로 TX와 RX를 함께 처리한다.</sub>
 
+## MBIST: March 알고리즘과 검출표
+
+`hsl_mbist`는 레인 BIST와 같은 요청 포트로 DRAM 배열의 한 영역(bank 하나, row 최대 16개 × 컬럼 최대 16개)에 March 알고리즘을 돌린다. 배경은 solid(0은 모두 0, 1은 모두 1)이고, ⇕는 위로 돈다.
+
+| 알고리즘 | 요소 | 워드당 연산 | 8워드 실행 (T13) |
+| --- | --- | ---: | ---: |
+| MATS+ | {⇕(w0); ⇑(r0,w1); ⇓(r1,w0)} | 5 | 40연산, 507클럭 |
+| March X | {⇕(w0); ⇑(r0,w1); ⇓(r1,w0); ⇕(r0)} | 6 | 48연산, 611클럭 |
+| March C- | {⇕(w0); ⇑(r0,w1); ⇑(r1,w0); ⇓(r0,w1); ⇓(r1,w0); ⇕(r0)} | 10 | 80연산, 1,021클럭 |
+
+- **연산을 하나씩 낸다.** 컨트롤러는 다른 주소의 요청 순서를 바꾼다(FR-FCFS, 쓰기 배치). 여러 개를 띄우면 배열이 받는 순서가 March 순서와 달라지는데, coupling fault는 aggressor 쓰기가 victim 읽기보다 먼저 배열에 닿아야 잡힌다. 쓰기 뒤에는 응답 → `q_empty`(WR이 핀으로 나감) → 4클럭(데이터가 배열에 닿음)을, 읽기 뒤에는 응답을 기다린다. 연산당 약 12.9클럭이다(March C- 64워드: 640연산, 8,239클럭).
+- **결과**: 실패 읽기 수(포화), 첫 실패 읽기의 호스트 주소와 다른 비트, 실패 워드 로그 16개(`{row offset, col}`, 워드마다 한 번, 17번째부터는 넘침 비트). 다음 단계의 리페어 엔진(BIRA)이 이 로그를 읽는다.
+- **고장 주입**: 채널 모델의 배열에 비트 단위 고장을 최대 4개 둔다. stuck-at(SA), 전이(TF ↑ · ↓), 서로 다른 두 워드 사이의 inversion · idempotent · state coupling(CFin, CFid, CFst)이다. [`tb/march_ref.py`](tb/march_ref.py)가 같은 규칙으로 도는 참조 March 시뮬레이터이고, 기대 검출표를 낸다.
+
+| 고장 (victim 워드 2 또는 5의 bit 3, aggressor bit 7) | 개수 | MATS+ | March X | March C- |
+| --- | ---: | ---: | ---: | ---: |
+| SA0 · SA1 | 2 | 2 | 2 | 2 |
+| TF ↑ · ↓ | 2 | 1 | 2 | 2 |
+| CFin (전이 ↑ · ↓ × aggressor 앞 · 뒤) | 4 | 3 | 4 | 4 |
+| CFid (전이 × 강제 값 × 순서) | 8 | 3 | 4 | 8 |
+| CFst (aggressor 상태 × victim 값 × 순서) | 8 | 4 | 5 | 8 |
+| **합계 (T13 = 참조)** | **24** | **13** | **17** | **24** |
+
+<sub>T13이 고장 하나씩 넣고 세 알고리즘을 돌려, 고장마다 검출 여부가 참조와 같은지와 첫 실패가 victim 워드 · 비트인지 본다(commit `f018966`, 두 시뮬레이터 같은 결과). MATS+는 마지막 w0 뒤에 읽기가 없어 TF ↓를 놓치고, March X는 끝의 ⇕(r0)으로 그것을 잡는다. CFid와 CFst의 두 순서(aggressor가 victim보다 앞 · 뒤)를 모두 잡으려면 March C-처럼 두 방향 각각에서 r0,w1과 r1,w0이 모두 있어야 한다.</sub>
+
+| 그 밖의 확인 (T13) | 결과 |
+| --- | --- |
+| 실패 워드 로그 | 4 × 16 영역에 SA1 (+0, 3) · SA0 (+2, 9) · TF ↑ (+3, 15): 처음 실패한 순서로 `03 29 3F`, 실패 읽기 7개 |
+| 로그 넘침 | DQ 핀 5 stuck-at-1: 모든 r0이 실패(64워드 × 3 = 192), 로그 16개가 차고 넘침 비트, 다른 비트 `20202020`(DQ5의 네 UI) |
+| 엔진 둘, 포트 하나 | 레인 BIST와 MBIST가 한 테스트 포트를 쓴다. 한 엔진이 도는 동안(또는 같은 클럭에) 온 다른 엔진의 start는 잡아 두었다가 포트가 비면 낸다. 두 순서 모두 둘 다 돌고 PASS, 함께 busy인 클럭 0 |
+
+- **start를 버리지 않고 기다리게 한 이유**: 읽기 레벨링은 자기가 낸 레인 BIST start 뒤에 busy가 오르기를 기다린다. MBIST 중이라고 start를 버리면 읽기 레벨링이 멈춘다. 같은 클럭에 둘 다 오면 레인 BIST가 먼저다.
+- **요청 포트를 플롭에서 낸다**: 처음 구현은 주소를 조합으로 만들었다(가변 shift, row 덧셈, XOR 맵, 0.78 ns). 칩 STA에서 그 경로가 컨트롤러의 주소 비교와 `req_ready` 앞에 붙어 −0.749 ns였다. 연산마다 주소 · 데이터 · 로그 키를 한 클럭 먼저 계산해(`S_LOAD`) 플롭에서 내자, DFT에서 시작하는 실패 경로가 없어졌다.
+- **면적** (`f018966`, 칩 넷리스트): `hsl_mbist` 2,849 µm², FF 264. 로그 16 × 8 bit와 중복 검사 비교기 16개가 큰 몫이다.
+
 ## PPA · PD 인계
 
-칩 STA가 보는 넷리스트의 면적이다(commit `8af801b`, `bash syn/sta_chip.sh`): Yosys 0.52가 모듈 경계를 유지한 채 합성하고, ABC가 1.25 ns를 목표로 Nangate45 typical에 매핑(버퍼링 · 사이징 포함)한 뒤 팬아웃 버퍼 트리를 넣었다. 배선은 없다.
+칩 STA가 보는 넷리스트의 면적이다(commit `f018966`, `bash syn/sta_chip.sh`): Yosys 0.52가 모듈 경계를 유지한 채 합성하고, ABC가 1.25 ns를 목표로 Nangate45 typical에 매핑(버퍼링 · 사이징 포함)한 뒤 팬아웃 버퍼 트리를 넣었다. 배선은 없다.
 
 | 블록 | 면적 (µm²) | Cell | FF | 비중 | 구성 (µm²) |
 | --- | ---: | ---: | ---: | ---: | --- |
-| Memory Controller (`mem_ctrl`) | 23,559 | 13,156 | 2,004 | 73% | 쓰기 큐 5,399 · 읽기 큐 4,657 · resp 6,079 · sched 3,721 · bank ×4 1,377 · chan 691 · xage 609 · 그 외 1,026 |
-| PHY digital | 3,599 | 1,610 | 385 | 11% | cdc_fifo 1,432 · phy_mis 1,029 · tx_gear 335 · dbi 320 · phy_top 306 · lane_shift 177 |
-| 읽기 레벨링 (`hsl_rd_train`) | 2,570 | 1,460 | 228 | 8% | 레인당 구간 추적 상태 |
-| DFT | 1,473 | 847 | 109 | 5% | prbs(출력 레지스터) 496 · lane_bist 433 + prbs ×2 261 · err_cnt 151 · dft_top 69 · loopback 63 |
-| CSR | 811 | 444 | 69 | 3% | 주소 11개, 읽기 mux와 읽기 데이터 레지스터 |
-| 기타 | 172 | 104 | 6 | 1% | top 103 · training_fsm 57 · rst_sync 12 |
-| **합계** | **32,184** | **17,621** | **2,801** | | |
+| Memory Controller (`mem_ctrl`) | 23,692 | 13,227 | 2,004 | 67% | 쓰기 큐 5,541 · 읽기 큐 4,657 · resp 6,079 · sched 3,721 · bank ×4 1,368 · chan 691 · xage 608 · 그 외 1,027 |
+| PHY digital | 3,599 | 1,610 | 385 | 10% | cdc_fifo 1,432 · phy_mis 1,029 · tx_gear 335 · dbi 320 · phy_top 306 · lane_shift 177 |
+| 읽기 레벨링 (`hsl_rd_train`) | 2,634 | 1,488 | 228 | 7% | 레인당 구간 추적 상태 |
+| DFT | 4,435 | 2,345 | 375 | 12% | mbist 2,849 · prbs(출력 레지스터) 496 · lane_bist 430 + prbs ×2 262 · dft_top 186 · err_cnt 151 · loopback 63 |
+| CSR | 1,084 | 573 | 97 | 3% | 주소 14개, 읽기 mux와 읽기 데이터 레지스터 |
+| 기타 | 167 | 98 | 6 | 0.5% | top 103 · training_fsm 52 · rst_sync 12 |
+| **합계** | **35,610** | **19,341** | **3,095** | | |
 
-<sub>`syn/area_by_block.py`가 Yosys `stat`을 블록별로 묶는다. `0193c04`의 같은 구성(지연 목표와 버퍼 없이 합성)은 30,241 µm² · 2,741 FF였고, 그 뒤 PRBS 워드와 CSR 읽기 데이터 레지스터(FF 60개)를 더했다. 컨트롤러 저장소는 `mem_ctrl`만 flatten 합성해 18,912 µm²를 낸다. 여기서는 블록별로 나누려고 경계를 유지해서, 경계를 넘는 최적화가 빠진 만큼 크다.</sub>
+<sub>`syn/area_by_block.py`가 Yosys `stat`을 블록별로 묶는다. `0193c04`의 같은 구성(지연 목표와 버퍼 없이 합성)은 30,241 µm² · 2,741 FF였고, 그 뒤 PRBS 워드와 CSR 읽기 데이터 레지스터(FF 60개)를 더해 `8af801b`에서 32,184 µm² · 2,801 FF였고, `f018966`에서 MBIST와 그 CSR이 더해졌다. 컨트롤러 RTL은 그대로인데 면적이 0.6% 움직인 것은 ABC 매핑의 실행 간 차이다. 컨트롤러 저장소는 `mem_ctrl`만 flatten 합성해 18,912 µm²를 낸다. 여기서는 블록별로 나누려고 경계를 유지해서, 경계를 넘는 최적화가 빠진 만큼 크다.</sub>
 
 | 제약 | 내용 |
 | --- | --- |
@@ -414,7 +462,7 @@ shift는 `hsl_phy_mis`에서 버스트의 네 심볼 모두에 걸린다(쓰기�
 | `pin_ck` | mission에서 `clk_phy`를 클럭 게이트(PHY 하강 엣지에서 enable)를 거쳐 내보냄. 출력 포트에 생성 클럭 `ck_out` |
 
 - **성능** (`8af801b`): 핀의 명령 간격은 규칙의 최소값이고(T2), 열린 row 읽기는 요청 → 응답 9 클럭이다. 이전 in-order MC의 WR 16 + RD 16(162 클럭)이 77 클럭으로 줄었다. 남은 병목은 진행 중인 RD 4개 대 PHY 왕복 8 클럭이다.
-- **타이밍** (`8af801b`): HSL 로직은 800 MHz · 1.6 GHz · RDQS를 모두 통과하고, 컨트롤러는 467 MHz에서 닫힌다([STA](#sta-세-클럭과-cdc)).
+- **타이밍** (`f018966`): HSL 로직은 800 MHz · 1.6 GHz · RDQS를 모두 통과하고, 컨트롤러는 463 MHz에서 닫힌다([STA](#sta-세-클럭과-cdc)).
 - **전력** (mW 미측정): DBI-DC는 DQ 8핀 중 high를 4개 이하로, DBI-AC는 UI당 DQ 전이를 4개 이하로 둔다([비교](#dbi-ac-off--dc--ac-비교)). CKE는 RESET에서만 0이고, 쓰기 beat가 없으면 TX beat는 0이다.
 - **PD 가이드**: deskew 4 tap = 8 UI까지 레인 스큐 허용, SRAM 매크로 없음(읽기 FIFO는 깊이 4 플롭이고, 컨트롤러의 큐와 응답 버퍼도 플롭으로 FF 2,004개), PHY 핀 로직은 범프 쪽, CSR과 FSM은 안쪽. 자세한 내용은 [`docs/05_pd_guide.md`](docs/05_pd_guide.md)에 있다.
 
@@ -422,14 +470,14 @@ shift는 `hsl_phy_mis`에서 버스트의 네 심볼 모두에 걸린다(쓰기�
 
 `bash syn/sta_chip.sh`가 RTL을 Nangate45 넷리스트로 합성하고 저장소의 SDC로 OpenSTA 3.1을 돌린다. 클럭은 이상 클럭(클럭 트리 없음)이고 배선은 없다. 경로를 찾기 위한 것이지 사인오프가 아니다.
 
-| 클럭 · 검사 (commit `8af801b`) | 결과 |
+| 클럭 · 검사 (commit `f018966`) | 결과 |
 | --- | --- |
 | `clk_phy` 1.6 GHz (0.625 ns) | slack +0.160 ns. 최악은 CSR `phy_en` → 클럭 게이트 enable 플롭(하강 엣지, 반 주기) |
 | `rdqs` (0.625 ns) | slack +0.056 ns. 입력 지연 0.25 ns를 뺀 `pin_rx_dv` → FIFO 쓰기 |
 | 읽기 FIFO 크로싱 (`set_max_delay`) | Gray 포인터 0.104 ns / 0.625 ns, FIFO 데이터 → `clk` 0.386 ns / 1.25 ns |
-| `clk` 800 MHz (1.25 ns), HSL 로직 | 모두 통과. 컨트롤러의 쓰기 데이터 → DBI-AC → 레인 shift → TX 워드는 +0.130 ns |
-| `clk` 800 MHz, 컨트롤러 | −0.892 ns, 최소 주기 2.14 ns(467 MHz). 실패 끝점 2,005개 |
-| hold · removal | −0.04 ns: CSR 리셋 핀의 removal. 이상 클럭이라 리셋 해제가 removal 시간(0.23 ns)보다 조금 일찍 닿는다. CTS 뒤 hold 수리 대상 |
+| `clk` 800 MHz (1.25 ns), HSL 로직 | 모두 통과. 컨트롤러의 쓰기 데이터 → DBI-AC → 레인 shift → TX 워드는 +0.130 ns(`8af801b`) |
+| `clk` 800 MHz, 컨트롤러 | −0.909 ns, 최소 주기 2.16 ns(463 MHz). 실패 끝점 2,008개, 모두 컨트롤러 안이거나 호스트 입력 → 컨트롤러다. `8af801b`에서는 −0.892 ns · 2.14 ns(467 MHz)였고, 컨트롤러 RTL은 같아 ABC 실행 간 차이다 |
+| hold · removal | −0.03 ns: CSR 리셋 핀의 removal. 이상 클럭이라 리셋 해제가 removal 시간(0.23 ns)보다 조금 일찍 닿는다. CTS 뒤 hold 수리 대상 |
 
 숫자가 의미를 갖기 전에 흐름에서 먼저 고친 것:
 
@@ -447,8 +495,9 @@ STA가 짚어 RTL을 고친 HSL 경로(모두 800 MHz에서 통과로 바뀜):
 | `cfg_addr` → CSR 읽기 mux → `cfg_rdata` (입출력 지연 각 0.5 ns) | −0.174 | 읽기 데이터 레지스터, 읽기 1클럭 |
 | 리셋 해제(`clk`) → 클럭 게이트 enable 플롭(`clk_phy` 하강 엣지) | −0.049 | enable 플롭의 리셋을 뺌. ICG 래치처럼 리셋이 없고 입력 `phy_en`이 리셋된다 |
 | CTRL · REMAP 설정 → DBI-AC → TX 워드 | −0.011 | 설정은 idle일 때만 바뀌므로 2클럭 multicycle(데이터 핀만) |
+| MBIST 상태 → 조합 주소(shift · 덧셈 · XOR 맵) → 컨트롤러 주소 비교 → `req_ready` | −0.749 | 연산마다 요청을 한 클럭 먼저 계산해 플롭에서 냄(`f018966`) |
 
-컨트롤러가 800 MHz를 닫지 못하는 이유: 임계 경로는 큐 엔트리의 bank → 스케줄러의 row hit · 후보 계산 → refresh 차단 mux → FR-FCFS 선택 → ACT 결정 → 뱅크 타이머 갱신으로, 한 클럭에 명령을 고르고 모든 타이머를 갱신하는 루프다(약 35단, 2.1 ns). 호스트 입력도 컨트롤러의 `req_ready`가 요청 주소에 조합으로 걸려 있어(쓰기 큐 forwarding, 읽기 큐 충돌 검사) 입력 → `req_ready`가 feedthrough다(−0.483 ns).
+컨트롤러가 800 MHz를 닫지 못하는 이유: 임계 경로는 큐 엔트리의 bank → 스케줄러의 row hit · 후보 계산 → refresh 차단 mux → FR-FCFS 선택 → ACT 결정 → 뱅크 타이머 갱신으로, 한 클럭에 명령을 고르고 모든 타이머를 갱신하는 루프다(약 35단, 2.1 ns). 호스트 입력도 컨트롤러의 `req_ready`가 요청 주소에 조합으로 걸려 있어(쓰기 큐 forwarding, 읽기 큐 충돌 검사) 입력 → `req_ready`가 feedthrough다(−0.521 ns, `8af801b`에서 −0.483). 같은 조합 경로가 `req_ready`를 받는 테스트 엔진의 상태 플롭까지 이어진다(끝점 19개, −0.269 ns).
 
 | 선택지 | 내용 | 판단 |
 | --- | --- | --- |
@@ -480,6 +529,8 @@ STA가 짚어 RTL을 고친 HSL 경로(모두 800 MHz에서 통과로 바뀜):
 | 통합 | 레인 BIST가 링크를 검사하지 못할 수 있음 | 새 컨트롤러는 쓰기 큐에 남은 주소의 읽기를 큐에서 답해 핀을 거치지 않음 | 컨트롤러에 `q_empty` 출력을 넣고, BIST가 쓰기 16개를 보낸 뒤 큐가 빌 때까지 기다렸다가 읽음 (`0193c04`) |
 | STA | 1.6 GHz 도메인이 통째로 분석에서 빠짐(플롭 44개 클럭 없음) | PLL 빈 쉘 때문에 생성 클럭이 마스터에서 이어지지 않음 | PLL 타이밍 스텁 (`8af801b`) |
 | STA | CDC `set_max_delay`가 아무 경로도 묶지 못함(경고만) | 합성 플롭 이름이 SDC 패턴과 다름 | 플롭에 레지스터 이름을 붙임 (`8af801b`). 같은 일이 실제 흐름에서 생기면 CDC가 조용히 제약 밖으로 빠진다 |
+| STA | MBIST를 넣자 DFT에서 컨트롤러로 가는 실패 경로 1,752개(최악 −0.749 ns) | MBIST 주소를 조합으로 만들어 컨트롤러 입력 논리 앞에 0.78 ns가 붙음 | 요청을 플롭에서 냄 (`f018966`). 면적 표에서는 블록 분류 목록에 `hsl_mbist`가 없어 DFT FF가 그대로 보였고, 넷리스트를 열어 확인한 뒤 `area_by_block.py`를 고침 |
+| 리뷰 | MBIST 중 읽기 레벨링을 시작하면 멈출 수 있음 | 첫 구현은 다른 엔진이 busy일 때 start를 버렸고, 읽기 레벨링은 자기가 낸 레인 BIST의 busy를 기다림. 같은 클럭에 두 start가 오면 둘 다 돌 수도 있었음 | start를 잡아 두었다가 포트가 비면 냄, 레인 BIST 우선. T13이 두 순서를 모두 확인 (`f018966`) |
 
 ## 실행 방법
 
@@ -537,10 +588,10 @@ portfolio-deck/  포트폴리오 PDF, PPTX (631d3bd 판: 3–20쪽 4feb39f, 21�
 | [00 스터디 맵](docs/00_study_map.md) | 항목별로 볼 파일, 3분 설명, 공개 HBM과 이 모델의 차이 |
 | [01 요구 스펙](docs/01_requirements.md) | 기능 요구 7개, 파라미터, 타이밍, 전력 · 신뢰성 규칙, 수락 조건 |
 | [02 아키텍처](docs/02_architecture.md) | 디지털 경계, 클럭 구조 A/B/C 비교, 클럭 식, 컨트롤러와 DFI 형태 경계, 데이터 배치, 리셋 |
-| [03 마이크로아키텍처](docs/03_microarchitecture.md) | 계층, CSR 맵, 트레이닝 상태, 호스트 포트, CA 핀과 PHY beat, 레인 BIST |
-| [04 검증 계획](docs/04_verification_plan.md) | 검증 계층, 스코어보드와 채널 모델 검사, SMOKE · T1–T12, 통과 규칙 |
+| [03 마이크로아키텍처](docs/03_microarchitecture.md) | 계층, CSR 맵, 트레이닝 상태, 호스트 포트, CA 핀과 PHY beat, 레인 BIST, MBIST |
+| [04 검증 계획](docs/04_verification_plan.md) | 검증 계층, 스코어보드와 채널 모델 검사, SMOKE · T1–T13, 통과 규칙 |
 | [05 PD 가이드](docs/05_pd_guide.md) | 클럭, 리셋, CDC, 핀 책임, floorplan, PD가 되묻는 항목 |
-| [06 DFT 계획](docs/06_dft_plan.md) | 관측점, 루프백 두 종류, PRBS, 레인 BIST, 스캔 규칙, 웨이퍼 테스트 순서 |
+| [06 DFT 계획](docs/06_dft_plan.md) | 관측점, 루프백 두 종류, PRBS, 레인 BIST, MBIST와 고장 모델 · 검출표, 스캔 규칙, 웨이퍼 테스트 순서 |
 | [07 용어](docs/07_glossary.md) | 이 프로젝트에서 쓰는 용어의 뜻 |
 | [실습 E0–E12](docs/exercises.md) · [E0/E1 노트](docs/e0_e1_notes.md) · [E12 클럭 대조](docs/e12_clocks.md) | 실습 단계와 완료 조건, 리셋 파형 설명, 클럭 주기 대조표 |
 
@@ -549,7 +600,7 @@ portfolio-deck/  포트폴리오 PDF, PPTX (631d3bd 판: 3–20쪽 4feb39f, 21�
 알려진 한계:
 
 - 컨트롤러는 RD를 4개까지만 띄우는데, 이 PHY에서는 RD 하나가 8 클럭 동안 슬롯을 잡아 읽기 대역이 절반으로 묶인다
-- 컨트롤러가 Nangate45에서 467 MHz(2.14 ns)에서 닫혀 800 MHz 컨트롤러 클럭을 닫지 못한다. 한 클럭에 명령을 고르고 타이머를 갱신하는 루프 때문이며, DFI 1 : 2 주파수 비율이 맞는 방향이다([STA](#sta-세-클럭과-cdc)). 호스트 입력 → `req_ready`도 컨트롤러 안에서 조합으로 이어진다
+- 컨트롤러가 Nangate45에서 463 MHz(2.16 ns)에서 닫혀 800 MHz 컨트롤러 클럭을 닫지 못한다. 한 클럭에 명령을 고르고 타이머를 갱신하는 루프 때문이며, DFI 1 : 2 주파수 비율이 맞는 방향이다([STA](#sta-세-클럭과-cdc)). 호스트 입력 → `req_ready`도 컨트롤러 안에서 조합으로 이어진다
 - STA는 이상 클럭, 배선 없음, typical 한 코너다. hold는 CTS 뒤에 다시 봐야 하고(지금 removal −0.04 ns), 리셋 트리는 스크립트가 넣은 버퍼 트리로 대신했다
 - PHY 읽기 경로에 고정 지연 계약(DFI `tphy_rdlat`)이 없다. 컨트롤러가 `rddata_valid`로 순서만 맞춘다
 - `phy_en`이나 루프백은 컨트롤러가 idle일 때만 바꿔야 한다. PHY를 끄면 진행 중인 RD가 답을 받지 못한다. 루프백 RD는 핀에 CA를 내지 않으므로 auto-precharge(close page)와 함께 쓰면 DRAM 쪽 뱅크 상태가 어긋난다. 기본값인 open page에서만 쓴다
@@ -557,7 +608,9 @@ portfolio-deck/  포트폴리오 PDF, PPTX (631d3bd 판: 3–20쪽 4feb39f, 21�
 - mission 경로의 strobe와 UI 직렬화는 beat 단위로 추상화했다. 채널 모델이 RDQS를 CK + tDQSCK로 만들고, preamble · DQS gating은 없다
 - 루프백은 병렬 루프백만 있다. 직렬화 이후를 도는 핀 루프백은 없다
 - 레인 BIST는 DQ 8레인만 진단한다. DBI 핀 고장은 DBI를 끈 상태에서 양방향 반전이 상쇄돼 데이터에 드러나지 않는다(경계 스캔 방식의 핀 테스트가 필요)
-- 레인 BIST는 컨트롤러를 거치므로 호스트가 조용하고 응답을 다 받은 상태에서 시작해야 한다. 칩은 BIST 동안 호스트 포트를 막을 뿐 그 조건을 검사하지 않는다
+- 레인 BIST와 MBIST는 컨트롤러를 거치므로 호스트가 조용하고 응답을 다 받은 상태에서 시작해야 한다. 칩은 엔진이 도는 동안 호스트 포트를 막을 뿐 그 조건을 검사하지 않는다
+- MBIST는 solid background와 비트 단위 고장만 본다. 한 워드 안 비트 사이의 coupling(intra-word), 이웃 셀 패턴 고장, 데이터 보존(retention)은 checkerboard · 보존 대기 같은 배경과 요소가 더 필요하다. 영역은 bank 하나, 최대 16 × 16 워드다
+- MBIST는 연산을 하나씩 내므로 느리다(연산당 약 12.9클럭). 실제 배열 MBIST는 core die에서 컨트롤러 없이 배열을 직접 몬다
 - 읽기 레벨링은 MISSION에서 펌웨어(CSR)가 돌린다. 요청 포트가 MISSION에서만 열리기 때문이다. 트레이닝 FSM의 RDLVL 단계는 아직 done 펄스를 기다린다. 쓰기 방향 레벨링은 없다
 
 다음 단계:
@@ -569,6 +622,9 @@ portfolio-deck/  포트폴리오 PDF, PPTX (631d3bd 판: 3–20쪽 4feb39f, 21�
 - [x] shift 방식 레인 리페어와 레인 BIST: 검출 → 재매핑 → 재검사(T10)
 - [x] 읽기 레벨링: 레인별 지연선 코드 스윕과 eye 중앙(T11)
 - [x] 칩 STA: Nangate45 + OpenSTA로 `clk`, `clk_phy`, `rdqs` 세 클럭과 CDC 제약을 함께 확인하고, STA가 짚은 HSL 경로 4개를 고침 (`8af801b`)
+- [x] March MBIST(MATS+ · March X · March C-)와 배열 고장 주입, 참조 시뮬레이터와 같은 검출표, 실패 워드 로그 (T13, `f018966`)
+- [ ] 실패 로그로 spare row · col 할당(BIRA), fuse 모델과 boot loader로 soft · hard repair
+- [ ] SECDED ECC: 에러 주입, CE · UE 로그, 디코더 self-test
 - [ ] 컨트롤러를 DFI 1 : 2로: 400 MHz에서 클럭마다 명령 두 개 (컨트롤러 저장소에서)
 - [ ] 호스트 경계 레지스터 슬라이스로 입력 → `req_ready` feedthrough 없애기
 - [ ] 컨트롤러의 읽기 반환 깊이(`RD_PIPE`)를 PHY 왕복에 맞추기 (컨트롤러 저장소에서)

@@ -29,6 +29,7 @@ hsl_base_die_lite
     hsl_loopback
     hsl_err_cnt
     hsl_lane_bist
+    hsl_mbist
 hsl_deskew                 블록 테스트만
 ```
 
@@ -51,7 +52,7 @@ hsl_deskew                 블록 테스트만
 - 쓰기 큐에 있는 주소를 읽으면 가장 최근 쓰기로 바로 답한다(forwarding). 이 읽기는 핀에 RD를 내지 않는다.
 - 읽기 큐에 있는 주소로 쓰려 하면 그 읽기가 나갈 때까지 쓰기를 받지 않는다.
 - 진행 중인 요청은 15개(tag 4 bit)까지다. 호스트가 `rsp_ready`를 내리면 응답이 쌓이고, tag가 차면 `req_ready`가 0이 된다.
-- `req_ready`는 MISSION이면서 `CTRL.phy_en`일 때만 1이 될 수 있다. 레인 BIST가 도는 동안은 0이고 `rsp_valid`도 0이다.
+- `req_ready`는 MISSION이면서 `CTRL.phy_en`일 때만 1이 될 수 있다. 레인 BIST나 MBIST가 도는 동안은 0이고 `rsp_valid`도 0이다.
 
 ## CSR
 
@@ -70,6 +71,9 @@ hsl_deskew                 블록 테스트만
 | `0x20` | TIMING1 | RO | | `{tRFC, tRTP, tWR, tWTR_L}`, 컨트롤러 `dram_pkg` 상수 |
 | `0x24` | LANE_BIST | RW | 0 | 쓰기 `[0]` start, `[5:4]` bank, `[15:8]` row. 읽기 `[0]` busy, `[1]` done, `[2]` pass, `[3]` 한 레인만 실패, `[7:4]` 가장 낮은 실패 레인, `[15:8]` DQ 레인별 에러, `[20:16]` 불일치 버스트 수 |
 | `0x28` | RDTRAIN | RW | 0 | 쓰기 `[0]` start, `[6:4]` 읽어 볼 레인. 읽기 `[0]` busy, `[1]` done, `[2]` 모든 레인에서 eye 찾음, `[6:4]` 레인, `[12:8]` 그 레인의 코드, `[20:16]` eye 시작, `[29:24]` eye 폭 |
+| `0x2C` | MBIST | RW | 0 | 쓰기 `[0]` start, `[2:1]` 알고리즘(0 MATS+, 1 March X, 2 March C-, 3은 2로), `[5:4]` bank, `[15:8]` 첫 row, `[19:16]` row 수 − 1, `[22:20]` log2 컬럼 수(4보다 크면 4). 읽기 `[0]` busy, `[1]` done, `[2]` pass(done이고 실패 0), `[3]` 로그 넘침, `[8:4]` 로그의 실패 워드 수, `[31:16]` 실패 읽기 수(포화) |
+| `0x30` | MBIST_LOG | RW | 0 | 쓰기 `[3:0]` 읽을 로그 항목. 읽기 `[13:0]` 첫 실패 읽기의 호스트 주소, `[23:16]` 그 항목 `{row offset[3:0], col[3:0]}`, `[27:24]` 항목 번호 |
+| `0x34` | MBIST_BITS | RO | 0 | 첫 실패 읽기에서 기대값과 다른 비트 |
 
 TIMING 필드는 8비트이고, 오른쪽이 LSB다. tRCD와 tWTR_L이 `[7:0]`에 있다. 쓰기는 무시한다. 타이밍은 컨트롤러가 상수로 지키므로, 바꾸려면 컨트롤러 저장소의 `dram_pkg`를 고친다.
 
@@ -163,3 +167,19 @@ IDLE --start--> P_WR: 쓰기 16개 (컬럼 0..15, PRBS7) --> P_DRAIN: q_empty �
 ```
 
 `LANE_BIST`의 bank와 row는 DRAM 쪽 주소다. BIST는 `host_addr`로 호스트 주소를 만들어 요청 포트에 낸다. 쓰기가 큐에 남은 채 읽으면 컨트롤러가 큐에서 답해 링크를 거치지 않으므로, 컨트롤러의 `q_empty`(두 큐가 모두 빔)를 기다린 뒤 읽는다. 큐가 비면 모든 쓰기의 WR이 핀으로 나간 것이고, 같은 뱅크의 RD는 컨트롤러가 tWTR_L을 지키므로 데이터보다 먼저 닿지 않는다(채널 모델이 검사). 읽은 워드는 같은 seed의 PRBS7과 beat마다 비교해 DQ 레인별로 sticky 기록한다.
+
+## MBIST
+
+```text
+IDLE --start--> LOAD: 다음 연산의 주소 · 데이터 · 로그 키를 플롭에 --> ISSUE: 요청 하나
+  쓰기: --> WACK 응답 --> DRAIN q_empty --> GUARD 4클럭 --> NEXT
+  읽기: --> RWAIT 응답, 기대값과 비교, 실패면 기록 --> NEXT
+NEXT: 같은 요소의 두 번째 연산, 다음 워드(요소 방향), 다음 요소, 또는 done --> LOAD
+```
+
+영역은 `MBIST` 쓰기의 bank, 첫 row, row 수, 컬럼 수다. 워드 순서는 row마다 컬럼이 빠르게 돈다(`idx = row offset × 2^ncl + col`). 주소는 `host_addr(bank, row0 + row offset, col)`로 만들어 요청 포트에 낸다. 요소 표는 `{last, down, two, op0, op1}` 7 bit이고 연산은 `{write, value}`다.
+
+- **순서**: 연산을 하나씩 낸다. 컨트롤러는 다른 주소의 요청 순서를 바꾸므로, March 순서를 배열에 그대로 전하려면 앞 연산이 배열에 닿은 뒤 다음을 낸다. 쓰기는 posted 응답 뒤 `q_empty`(WR이 핀으로 나감)와 4클럭(WL과 TX 기어를 지나 배열에 닿음)을, 읽기는 응답을 기다린다.
+- **기록**: 실패 읽기마다 `fail_cnt`(16 bit 포화). 첫 실패는 주소와 다른 비트를 남긴다. 로그는 실패 워드를 `{row offset, col}`로 최대 16개, 같은 워드는 한 번만(16개 비교) 넣고, 17번째 새 워드부터는 `log_ovf`를 세운다.
+- **포트 공유**: `hsl_dft_top`이 레인 BIST와 MBIST를 한 테스트 포트(`tp_*`)로 묶는다. 한 번에 하나만 돌고, 다른 엔진이 도는 동안 또는 같은 클럭에 온 start는 잡아 두었다가 포트가 비면 낸다(레인 BIST 우선). 읽기 레벨링이 자기가 낸 레인 BIST의 busy를 기다리므로 start를 버리지 않는다.
+- **타이밍**: 요청 출력(`req_addr`, `req_write`, `req_wdata`)은 플롭이다. 조합 주소(가변 shift, 덧셈, XOR 맵)가 컨트롤러의 주소 비교 앞에 붙으면 칩 STA에서 −0.749 ns였다.
