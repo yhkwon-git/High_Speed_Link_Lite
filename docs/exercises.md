@@ -36,7 +36,7 @@ E0부터 E12까지 구현되어 있다. 각 실습은 자기 테스트가 `[SMOK
 
 ## E7. 기어박스
 
-`beats_per_burst = 2`, PHY beat 16비트. `clk_phy`를 컨트롤러 클럭의 2배로 올리고, 한 버스트를 두 beat로 내보낸다. 시뮬 클럭과 SDC 주기를 `docs/02_architecture.md`의 식에 맞게 다시 적는다. 숫자를 문서 없이 RTL에만 넣지 않는다.
+`beats_per_burst = 2`, PHY beat 16비트. `clk_phy`를 컨트롤러 클럭의 2배로 올리고, 한 버스트를 두 beat로 내보낸다. 처음에는 토글 핸드셰이크 기어박스였고, mission 경로를 붙이며 매 클럭 한 워드를 내는 동기 기어(`hsl_tx_gear`)로 바꿨다. 시뮬 클럭과 SDC 주기를 `docs/02_architecture.md`의 식에 맞게 다시 적는다. 숫자를 문서 없이 RTL에만 넣지 않는다.
 
 ## E8. 비동기 FIFO
 

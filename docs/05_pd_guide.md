@@ -6,7 +6,8 @@ v0.1에서 디지털이 PD에 넘기는 내용이다. 좌표와 라이브러리 
 
 - 컨트롤러 클럭 `clk`는 포트 `clk`, 주기 1.25 ns (800 MHz).
 - PHY 클럭 `clk_phy`는 `u_phy/u_phy_clk/clk_phy`, 소스 `clk`, 관계 2:1, 주기 0.625 ns (1.6 GHz).
-- `pin_ck`는 0이다. 생성 클럭으로 선언하지 않는다.
+- `pin_ck`는 mission에서 `clk_phy`를 클럭 게이트로 내보낸다(enable은 PHY 하강 엣지에서 잡아 펄스가 잘리지 않음, 실리콘에서는 ICG). 출력 포트에 생성 클럭 `ck_out`.
+- RDQS(`pin_rdqs`)는 0.625 ns 입력 클럭이다. CK + tDQSCK라 위상이 정해지지 않는다.
 - 숫자 대조는 `docs/e12_clocks.md`다. 식은 `docs/02_architecture.md`다.
 
 ## 리셋
@@ -18,12 +19,11 @@ v0.1에서 디지털이 PD에 넘기는 내용이다. 좌표와 라이브러리 
 
 ## CDC
 
-칩의 `hsl_cdc_fifo`는 `SAME_CLOCK=0`이다(이 파라미터는 동작을 바꾸지 않는다). 쓰기 클럭은 `clk_phy`, 읽기 클럭은 `clk`다.
-
-v0.1 칩에서는 기어박스 `din_valid`, FIFO `wr_en`/`rd_en`이 0이고 deskew 출력은 쓰이지 않는다. 그래서 `clk_phy` 쪽 플롭은 합성에서 상수로 지워지고, 아래 `set_max_delay`는 대상 셀이 없는 상태가 된다. 이 제약은 그 경로를 칩에 연결하는 단계에서 의미를 갖는다. `hsl_phy_clk`는 `SYNTHESIS`가 정의되면 빈 쉘이다. PLL 매크로가 그 자리를 채운다.
+칩의 읽기 FIFO(`u_phy/u_mis/u_rx_fifo`)는 쓰기 클럭이 RDQS, 읽기 클럭이 `clk`다. TX 기어의 `clk` → `clk_phy`는 같은 PLL에서 나온 동기 경로라 FIFO가 없고, 반 주기(0.625 ns) 경로로 타이밍을 본다. deskew는 아직 경로에 없다. `hsl_phy_clk`는 `SYNTHESIS`가 정의되면 빈 쉘이다. PLL 매크로가 그 자리를 채운다.
 
 - 포인터는 각 도메인의 그레이 코드 플롭(`wgray`, `rgray`)에서 나간다. 바이너리 플롭의 XOR를 그대로 넘기면 여러 비트가 바뀌는 순간 글리치가 생기고, 첫 싱크 플롭이 옛 값도 새 값도 아닌 포인터를 잡을 수 있다.
-- 크로싱은 `wgray`(`clk_phy`) → `wptr_g_s1`(`clk`)과 `rgray`(`clk`) → `rptr_g_s1`(`clk_phy`) 두 개다. 둘 다 빠른 쪽 주기인 `set_max_delay 0.625`로 묶는다. 한 그레이 스텝의 비트들이 한 주기 안에 도착하게 하려는 것이다.
+- 크로싱은 `wgray`(RDQS) → `wptr_g_s1`(`clk`)과 `rgray`(`clk`) → `rptr_g_s1`(RDQS) 두 개다. 둘 다 빠른 쪽 주기인 `set_max_delay 0.625`로 묶는다. 한 그레이 스텝의 비트들이 한 주기 안에 도착하게 하려는 것이다. FIFO 데이터 → `clk`는 포인터가 싱크 두 단을 지난 뒤에 읽히므로 `set_max_delay 1.25`다.
+- RDQS와 다른 클럭 사이에 비동기 clock group을 걸지 않는다. clock group은 false path처럼 동작해 위 `set_max_delay`보다 우선한다.
 - `*_s1` → `*_s2`는 한 클럭 안의 경로라 예외를 두지 않는다.
 - 포인터 경로를 `set_false_path`로 묶지 않는다. false path는 그 경로의 지연을 타이밍이 보지 않게 만든다.
 

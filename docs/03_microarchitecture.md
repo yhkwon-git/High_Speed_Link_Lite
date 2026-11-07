@@ -16,9 +16,10 @@ hsl_base_die_lite
     hsl_phy_clk
     hsl_dbi
     hsl_lane_shift
-    hsl_gearbox
+    hsl_phy_mis
+      hsl_tx_gear
+      hsl_cdc_fifo
     hsl_deskew
-    hsl_cdc_fifo
     hsl_phy_tx
     hsl_phy_rx
   hsl_dft_top
@@ -64,6 +65,7 @@ CTRL 비트:
 | 3 | prbs_en | PRBS7을 TX 페이로드로 |
 | 4 | dbi_en | DBI 켬. 규칙은 bit 6 |
 | 5 | phy_bypass | 1일 때 TX가 채널 모델과 버스트를 주고받음 |
+| 7 | phy_en | mission 데이터패스(행 · 열 CA 핀, PHY beat). `phy_bypass`가 우선 |
 | 6 | dbi_ac | 0: DC(beat popcount가 4보다 크면 반전), 1: AC(직전 UI 대비 DQ 전이가 4보다 많으면 반전. beat 0의 기준은 WR 헤더 바이트) |
 
 STATUS 비트:
@@ -115,7 +117,7 @@ TRAIN 쓰기는 `[0]` start, `[1]` zq_done, `[2]` wrlvl_done, `[3]` rdlvl_done, 
 
 | 핀 | 폭 | 값 |
 | --- | --- | --- |
-| `pin_ck` | 1 | 0에 고정. 로직 클럭을 범프에 연결하지 않는다 |
+| `pin_ck` | 1 | mission에서 `clk_phy`(게이트, PHY 하강 엣지 enable). 그 밖에는 0 |
 | `pin_cke` | 1 | FSM이 RESET이 아니면 1 |
 | `pin_ca` | 8 | `{2'b00, bank, opc}` |
 | `pin_dq_o` | 10 | `{RED, DBI, DQ[7:0]}` |
@@ -123,6 +125,13 @@ TRAIN 쓰기는 `[0]` start, `[1]` zq_done, `[2]` wrlvl_done, `[3]` rdlvl_done, 
 | `pin_dqs_o` | 1 | 심볼 사이클만 1 |
 | `pin_dq_i` | 10 | 입력 |
 | `pin_dqs_i` | 1 | 입력 |
+| `pin_rca` | 12 | mission 행 CA `{rcmd[1:0], bank, row}`, rcmd 1 ACT, 2 PRE |
+| `pin_cca` | 8 | mission 열 CA `{ccmd[1:0], bank, col}`, ccmd 1 RD, 2 WR |
+| `pin_tx_beat` | 20 | mission 쓰기 beat, UI 두 개 × `{RED, DBI, DQ}`, UI0이 하위 |
+| `pin_tx_dqs` | 2 | WDQS 패턴, 데이터가 있는 beat에서 `01` |
+| `pin_tx_dv` | 1 | 쓰기 beat 유효 |
+| `pin_rdqs` | 1 | 입력. RDQS, 읽기 beat를 이 상승 엣지에서 받음 |
+| `pin_rx_beat`, `pin_rx_dv` | 20, 1 | 입력. 읽기 beat와 유효 |
 
 `phy_bypass`가 1일 때만 TX가 핀을 움직인다. 명령이 받아진 사이클은 IDLE이라 핀이 조용하고, 다음 사이클이 헤더다.
 
@@ -138,7 +147,7 @@ TRAIN 쓰기는 `[0]` start, `[1]` zq_done, `[2]` wrlvl_done, `[3]` rdlvl_done, 
 
 `loopback`이 1이어도 TX는 핀을 똑같이 구동한다. 달라지는 것은 RX다. `hsl_phy_top`의 `lb_hold`가 루프백 중 받아진 WR의 페이로드(DBI와 리페어 전)를 잡아 두고, RD는 `rd_start` 다음 클럭에 핀을 보지 않고 그 값을 응답한다.
 
-기어박스는 칩 안에서 `din_valid`가 0이다. 32비트를 16비트 두 beat로 나누는 동작은 별도 인스턴스가 검사한다. beat0이 하위 16비트다.
+mission 경로의 TX 기어(`hsl_tx_gear`)는 컨트롤러 엣지에서 나온 워드를 반 주기 뒤의 PHY 엣지(E1)에서 받아 하위 beat를, 다음 E0에서 상위 beat를 낸다. E1은 컨트롤러 클럭 토글을 PHY 클럭으로 이전 값과 비교해 찾는다. 읽기는 RDQS 상승 엣지에서 beat 두 개를 모아 깊이 4 Gray FIFO(40 bit)에 쓰고, 컨트롤러 클럭에서 꺼내 shift와 DBI를 푼다.
 
 ## 뱅크 FSM
 
