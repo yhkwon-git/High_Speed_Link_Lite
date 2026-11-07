@@ -7,7 +7,7 @@ rtl/mc/hsl_bank_fsm.sv
 rtl/mc/hsl_scheduler.sv
 rtl/mc/hsl_mc_top.sv
 rtl/phy/hsl_dbi.sv
-rtl/phy/hsl_lane_repair.sv
+rtl/phy/hsl_lane_shift.sv
 rtl/phy/hsl_gearbox.sv
 rtl/phy/hsl_deskew.sv
 rtl/phy/hsl_cdc_fifo.sv
@@ -18,5 +18,6 @@ rtl/phy/hsl_phy_top.sv
 rtl/dft/hsl_prbs.sv
 rtl/dft/hsl_loopback.sv
 rtl/dft/hsl_err_cnt.sv
+rtl/dft/hsl_lane_bist.sv
 rtl/dft/hsl_dft_top.sv
 rtl/top/hsl_base_die_lite.sv

@@ -2,7 +2,8 @@
 // -----------------------------------------------------------------------------
 // hsl_phy_rx
 // After rd_start, the next BL controller clocks are data beats from the model.
-// DBI on the pin is undone here so the host sees logical bytes.
+// sym_i is the logical {DBI, DQ} after hsl_lane_shift. DBI is undone here so
+// the host sees logical bytes.
 // With loopback, rd_start returns lb_data on the next clock and the pins are
 // not sampled. hsl_phy_top drives lb_data with the last loopback WR burst.
 // -----------------------------------------------------------------------------
@@ -12,7 +13,7 @@ module hsl_phy_rx (
   input  wire                        clk,
   input  wire                        rst_n,
   input  wire                        rd_start,
-  input  wire  [hsl_pkg::PIN_W-1:0]  dq_i,
+  input  wire  [hsl_pkg::LANE_N-1:0] sym_i,
   input  wire                        dqs_i,
   input  wire  [hsl_pkg::DATA_W-1:0] lb_data,
   input  wire                        loopback,
@@ -25,8 +26,8 @@ module hsl_phy_rx (
   logic [2:0]        nbeat;
   logic [DATA_W-1:0] acc;
 
-  wire [DQ_W-1:0] pin_byte = dq_i[DQ_W-1:0];
-  wire            pin_dbi  = dq_i[DBI_LSB];
+  wire [DQ_W-1:0] pin_byte = sym_i[DQ_W-1:0];
+  wire            pin_dbi  = sym_i[DQ_W];
   wire [DQ_W-1:0] logical  = pin_dbi ? ~pin_byte : pin_byte;
 
   always_ff @(posedge clk or negedge rst_n) begin

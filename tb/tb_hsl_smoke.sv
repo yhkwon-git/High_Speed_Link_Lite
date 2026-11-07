@@ -1,5 +1,5 @@
 // Chip-level smoke plus T1, T4, T5, T7, T8 (PRBS compare, loopback WR->RD),
-// and T9 (DBI-AC at the pins, DBI on RD data).
+// T9 (DBI-AC at the pins, DBI on RD data), and T10 (lane BIST, repair, retest).
 // Controller half-period is CTRL_PERIOD_PS/2 = 625 ps (800 MHz).
 `timescale 1ns/100fs
 `default_nettype none
@@ -48,6 +48,12 @@ module tb_hsl_smoke;
   logic [31:0] got_data;
   logic        mr_dbi_en;
   logic        mr_dbi_ac;
+  logic        mr_repair_en;
+  logic [3:0]  mr_repair_lane;
+  logic [PIN_W-1:0] fault_mask; // stuck pins on the link, both directions
+  logic [PIN_W-1:0] fault_val;
+  wire  [PIN_W-1:0] link_to_dram;
+  wire  [PIN_W-1:0] link_to_phy;
 
   hsl_base_die_lite dut (
     .clk(clk), .rst_n(rst_n),
@@ -64,12 +70,15 @@ module tb_hsl_smoke;
   dram_channel_behav u_dram (
     .clk(clk), .rst_n(rst_n),
     .pin_ck(pin_ck), .pin_cke(pin_cke), .pin_ca(pin_ca),
-    .pin_dq_i(pin_dq_o), .pin_dq_oe(pin_dq_oe), .pin_dqs_i(pin_dqs_o),
+    .pin_dq_i(link_to_dram), .pin_dq_oe(pin_dq_oe), .pin_dqs_i(pin_dqs_o),
     .mr_dbi_en(mr_dbi_en), .mr_dbi_ac(mr_dbi_ac),
+    .mr_repair_en(mr_repair_en), .mr_repair_lane(mr_repair_lane),
     .pin_dq_o(dram_dq), .pin_dqs_o(dram_dqs)
   );
 
-  assign pin_dq_i  = dram_dq;
+  assign link_to_dram = (pin_dq_o & ~fault_mask) | (fault_val & fault_mask);
+  assign link_to_phy  = (dram_dq & ~fault_mask) | (fault_val & fault_mask);
+  assign pin_dq_i     = link_to_phy;
   assign pin_dqs_i = dram_dqs;
 
   tb_hsl_blocks u_blocks (
@@ -379,38 +388,45 @@ module tb_hsl_smoke;
     end
   endtask
 
-  task automatic run_t7();
-    integer t7bad;
+  // T7: shift repair at the pins. REMAP lane 3: DQ3 idles, lanes 3-7 use the
+  // next pin up, the DBI pin carries DQ7 and RED carries DBI, so beat 0 = FF
+  // goes out as {RED 0, DBI 1, DQ F7} = 1F7. Lane 8 (the DBI pin) with DBI on:
+  // FF goes out as 00 + DBI 1 and DBI moves to RED = 200. Lane 15: no shift.
+  task automatic t7_wr(input logic [3:0] col, input logic [PIN_W-1:0] exp, output logic ok);
     begin
-      t7bad = 0;
+      ncap = 0;
+      cap_pins = 1'b1;
+      push_cmd(OPC_WR, 2'd2, 8'h04, col, 32'h0000_00FF);
+      wait_caps(5);
+      cap_pins = 1'b0;
+      wait_dqs_done();
+      ok = (ncap >= 2) && (caps[1] === exp);
+      if (!ok) begin
+        $display("[T7] col %0d ncap %0d b0 %h b1 %h exp %h", col, ncap, caps[0], caps[1], exp);
+      end
+    end
+  endtask
+
+  task automatic run_t7();
+    logic ok3;
+    logic ok8;
+    logic ok15;
+    begin
       arm_bypass(32'h0);
       csr_write(CSR_REMAP, {24'h0, 4'd3, 3'b0, 1'b1});
       push_cmd(OPC_ACT, 2'd2, 8'h04, 4'h0, 32'h0);
       wait_dqs_done();
-      ncap = 0;
-      cap_pins = 1'b1;
-      push_cmd(OPC_WR, 2'd2, 8'h04, 4'h3, 32'h0000_00FF);
-      wait_caps(5);
-      cap_pins = 1'b0;
-      wait_dqs_done();
-      if ((ncap < 2) || (caps[1][7:0] !== 8'hF7) || (caps[1][RED_LSB] !== 1'b1)) begin
-        $display("[T7] lane3 ncap %0d b0 %h b1 %h", ncap, caps[0], caps[1]);
-        errors = errors + 1;
-        t7bad = 1;
-      end
+      t7_wr(4'h3, 10'h1F7, ok3);
+      arm_bypass(32'h1 << CTRL_DBI_EN);
       csr_write(CSR_REMAP, {24'h0, 4'd8, 3'b0, 1'b1});
-      ncap = 0;
-      cap_pins = 1'b1;
-      push_cmd(OPC_WR, 2'd2, 8'h04, 4'h4, 32'h0000_00FF);
-      wait_caps(5);
-      cap_pins = 1'b0;
-      if ((ncap < 2) || (caps[1][7:0] !== 8'hFF)) begin
-        $display("[T7] lane8 ncap %0d b0 %h b1 %h", ncap, caps[0], caps[1]);
-        errors = errors + 1;
-        t7bad = 1;
-      end
-      if (t7bad == 0) begin
+      t7_wr(4'h4, 10'h200, ok8);
+      arm_bypass(32'h0);
+      csr_write(CSR_REMAP, {24'h0, 4'd15, 3'b0, 1'b1});
+      t7_wr(4'h5, 10'h0FF, ok15);
+      if (ok3 && ok8 && ok15) begin
         $display("[T7] PASS");
+      end else begin
+        errors = errors + 1;
       end
       csr_write(CSR_REMAP, 32'h0);
     end
@@ -767,6 +783,140 @@ module tb_hsl_smoke;
     end
   endtask
 
+  // ---------------------------------------------------------------------------
+  // T10: lane repair flow. A stuck pin sits on the link between the chip and
+  // the channel model (both directions, like a broken bump). The lane BIST
+  // finds the lane, firmware (this TB) programs REMAP on the chip and the
+  // repair setting on the model, and a second run must pass.
+  // ---------------------------------------------------------------------------
+  localparam logic [1:0] T10_BANK = 2'd1;
+  localparam logic [7:0] T10_ROW  = 8'h55;
+
+  task automatic lane_bist(output logic [31:0] st);
+    integer guard;
+    begin
+      csr_write(CSR_LANE_BIST, {16'h0, T10_ROW, 2'b00, T10_BANK, 4'b0001});
+      guard = 0;
+      st = '0;
+      while (((st[0] === 1'b1) || (st[1] !== 1'b1)) && (guard < 3000)) begin
+        csr_read(CSR_LANE_BIST, st);
+        guard = guard + 1;
+      end
+    end
+  endtask
+
+  task automatic set_repair(input logic en, input logic [3:0] lane);
+    begin
+      csr_write(CSR_REMAP, {24'h0, lane, 3'b0, en});
+      mr_repair_en   = en;
+      mr_repair_lane = lane;
+    end
+  endtask
+
+  task automatic run_t10();
+    integer      t10bad;
+    integer      k;
+    integer      v;
+    integer      found;
+    integer      fixed;
+    integer      guard;
+    logic [31:0] st;
+    logic [31:0] d;
+    begin
+      t10bad = 0;
+      found  = 0;
+      fixed  = 0;
+      csr_write(CSR_CTRL, (32'h1 << CTRL_TRAIN_BYPASS) | (32'h1 << CTRL_SOFT_RST));
+      wait_cycles(3);
+      csr_write(CSR_CTRL, 32'h1 << CTRL_TRAIN_BYPASS);
+      wait_cycles(4);
+      arm_bypass(32'h0);
+
+      // Clean link.
+      lane_bist(st);
+      if ((st[2:0] !== 3'b110) || (st[15:8] !== 8'h00)) begin
+        $display("[T10] clean link status %h", st);
+        t10bad = t10bad + 1;
+      end
+
+      // Each DQ lane stuck at 0 and at 1: detect, repair, retest.
+      for (k = 0; k < DQ_W; k = k + 1) begin
+        for (v = 0; v < 2; v = v + 1) begin
+          fault_mask = 10'(1) << k;
+          fault_val  = (v == 1) ? fault_mask : '0;
+          lane_bist(st);
+          if ((st[1] === 1'b1) && (st[2] === 1'b0) && (st[3] === 1'b1) &&
+              (st[7:4] === 4'(k)) && (st[15:8] === (8'(1) << k)) && (st[20:16] !== 5'd0)) begin
+            found = found + 1;
+          end else begin
+            $display("[T10] lane %0d stuck %0d: status %h", k, v, st);
+            t10bad = t10bad + 1;
+          end
+          set_repair(1'b1, 4'(k));
+          lane_bist(st);
+          if ((st[2:0] === 3'b110) && (st[15:8] === 8'h00)) begin
+            fixed = fixed + 1;
+          end else begin
+            $display("[T10] lane %0d stuck %0d after repair: status %h", k, v, st);
+            t10bad = t10bad + 1;
+          end
+          set_repair(1'b0, 4'd0);
+        end
+      end
+
+      // Host traffic through a repaired link, DBI-AC on both directions.
+      fault_mask = 10'(1) << 5;
+      fault_val  = fault_mask;
+      set_repair(1'b1, 4'd5);
+      arm_bypass((32'h1 << CTRL_DBI_EN) | (32'h1 << CTRL_DBI_AC));
+      mr_dbi_en = 1'b1;
+      mr_dbi_ac = 1'b1;
+      push_wait(OPC_ACT, T10_BANK, 8'h66, 4'h0, 32'h0);
+      for (k = 0; k < 16; k = k + 1) begin
+        push_wait(OPC_WR, T10_BANK, 8'h66, 4'(k), {16'(k), 16'hA5C3} ^ (32'h1 << k));
+      end
+      for (k = 0; k < 16; k = k + 1) begin
+        got_rsp = 1'b0;
+        push_wait(OPC_RD, T10_BANK, 8'h66, 4'(k), 32'h0);
+        guard = 0;
+        while (!got_rsp && (guard < 200)) begin
+          @(posedge clk);
+          guard = guard + 1;
+        end
+        #1ps;
+        d = {16'(k), 16'hA5C3} ^ (32'h1 << k);
+        if (!got_rsp || (got_data !== d)) begin
+          $display("[T10] repaired RD col %0d rsp %b data %h exp %h", k, got_rsp, got_data, d);
+          t10bad = t10bad + 1;
+        end
+      end
+      mr_dbi_en = 1'b0;
+      mr_dbi_ac = 1'b0;
+      arm_bypass(32'h0);
+      push_wait(OPC_PRE, T10_BANK, 8'h66, 4'h0, 32'h0);
+      set_repair(1'b0, 4'd0);
+
+      // Two bad lanes: found, but one spare cannot fix them.
+      fault_mask = (10'(1) << 2) | (10'(1) << 6);
+      fault_val  = 10'(1) << 2;
+      lane_bist(st);
+      if ((st[1] !== 1'b1) || (st[2] !== 1'b0) || (st[3] !== 1'b0) || (st[15:8] !== 8'h44)) begin
+        $display("[T10] two lanes: status %h", st);
+        t10bad = t10bad + 1;
+      end
+      fault_mask = '0;
+      fault_val  = '0;
+
+      $display("[T10] stuck-at on 8 DQ lanes x {0,1}: found %0d/16, repaired %0d/16; two lanes flagged not repairable",
+               found, fixed);
+      if (t10bad == 0) begin
+        $display("[T10] PASS");
+      end else begin
+        errors = errors + t10bad;
+      end
+    end
+  endtask
+
   initial begin
     errors = 0;
     // block_errors is driven by the u_blocks output port only.
@@ -786,6 +936,10 @@ module tb_hsl_smoke;
     got_data = '0;
     mr_dbi_en = 1'b0;
     mr_dbi_ac = 1'b0;
+    mr_repair_en = 1'b0;
+    mr_repair_lane = '0;
+    fault_mask = '0;
+    fault_val = '0;
     mon_on = 1'b0;
     mon_dc = 1'b0;
     mon_ac = 1'b0;
@@ -808,6 +962,7 @@ module tb_hsl_smoke;
     run_t7();
     run_t8();
     run_t9();
+    run_t10();
 
     wait (block_done);
     if (block_errors != 0) errors = errors + block_errors;

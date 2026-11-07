@@ -17,6 +17,7 @@ package hsl_pkg;
   localparam int DBI_W  = 1;
   localparam int RED_W  = 1;
   localparam int PIN_W  = DQ_W + DBI_W + RED_W; // 10
+  localparam int LANE_N = DQ_W + DBI_W;         // 9 logical lanes: {DBI, DQ}
   localparam int BL     = 4;
   localparam int DDR_BITS = 2;                  // bits per DQ per CK
   localparam int BANK_N = 4;
@@ -67,6 +68,7 @@ package hsl_pkg;
   localparam logic [7:0] CSR_REMAP   = 8'h18;
   localparam logic [7:0] CSR_TIMING0 = 8'h1C;
   localparam logic [7:0] CSR_TIMING1 = 8'h20;
+  localparam logic [7:0] CSR_LANE_BIST = 8'h24;
 
   localparam int CTRL_SOFT_RST     = 0;
   localparam int CTRL_TRAIN_BYPASS = 1;
@@ -87,6 +89,12 @@ package hsl_pkg;
   localparam int STAT_TRAIN_DONE = 5;
   localparam int STAT_MISSION    = 6;
   localparam int STAT_SOFT_RST   = 7;
+
+  // LANE_BIST write: [0] start, [5:4] bank, [15:8] row.
+  // LANE_BIST read:  [0] busy, [1] done, [2] pass, [3] one lane failed,
+  //                  [7:4] lowest failing DQ lane, [15:8] DQ lane errors,
+  //                  [20:16] bursts with a mismatch.
+  localparam int LB_BURSTS = 16; // WR/RD pairs per lane BIST run
 
   // Study timings in controller clocks. Not a JEDEC AC table.
   localparam logic [7:0] T_RCD = 8'd4;

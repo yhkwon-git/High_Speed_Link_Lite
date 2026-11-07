@@ -9,6 +9,11 @@
 // mr_dbi_en / mr_dbi_ac, which stand in for the DRAM mode register (this
 // framer has no MRS). The encoder below is the plain serial rule, written
 // apart from rtl/phy/hsl_dbi.sv so it can check that block's RX side.
+//
+// Lane repair on the DRAM side: mr_repair_en / mr_repair_lane give the same
+// shift as rtl/phy/hsl_lane_shift.sv (pin k idles, lanes from k up use the
+// next pin, RED carries the last one). It is written again as loops here and
+// applies to every symbol, headers included, in both directions.
 // -----------------------------------------------------------------------------
 `default_nettype none
 
@@ -23,6 +28,8 @@ module dram_channel_behav (
   input  wire                       pin_dqs_i,
   input  wire                       mr_dbi_en,
   input  wire                       mr_dbi_ac,
+  input  wire                       mr_repair_en,
+  input  wire  [3:0]                mr_repair_lane,
   output logic [hsl_pkg::PIN_W-1:0] pin_dq_o,
   output logic                      pin_dqs_o
 );
@@ -43,10 +50,49 @@ module dram_channel_behav (
   logic              open_v   [0:BANK_N-1];
   logic [DATA_W-1:0] mem [0:BANK_N-1][0:(1<<ROW_W)-1][0:(1<<COL_W)-1];
 
+  // Pins -> logical {DBI, DQ}: lane i is on pin i below the bad pin, on i+1 from it.
+  function automatic logic [LANE_N-1:0] from_pins(
+    input logic [PIN_W-1:0] p,
+    input logic             en,
+    input logic [3:0]       lane
+  );
+    integer i;
+    integer k;
+    begin
+      k = (en && (lane < 4'(LANE_N))) ? int'(lane) : PIN_W;
+      for (i = 0; i < LANE_N; i = i + 1) begin
+        from_pins[i] = (i < k) ? p[i] : p[i+1];
+      end
+    end
+  endfunction
+
+  // Logical {DBI, DQ} -> pins; the bad pin and, without repair, RED stay 0.
+  function automatic logic [PIN_W-1:0] to_pins(
+    input logic [LANE_N-1:0] l,
+    input logic              en,
+    input logic [3:0]        lane
+  );
+    integer i;
+    integer k;
+    begin
+      k = (en && (lane < 4'(LANE_N))) ? int'(lane) : PIN_W;
+      to_pins = '0;
+      for (i = 0; i < PIN_W; i = i + 1) begin
+        if ((i < k) && (i < LANE_N)) begin
+          to_pins[i] = l[i];
+        end else if (i > k) begin
+          to_pins[i] = l[i-1];
+        end
+      end
+    end
+  endfunction
+
+  wire [LANE_N-1:0]  lin      = from_pins(pin_dq_i, mr_repair_en, mr_repair_lane);
+  wire [LANE_N-1:0]  lout     = from_pins(pin_dq_o, mr_repair_en, mr_repair_lane);
   wire [3:0]         opc_pin  = pin_ca[3:0];
   wire [BANK_W-1:0]  bank_pin = pin_ca[5:4];
-  wire [DQ_W-1:0]    dq_b     = pin_dq_i[DQ_W-1:0];
-  wire               dbi_b    = pin_dq_i[DBI_LSB];
+  wire [DQ_W-1:0]    dq_b     = lin[DQ_W-1:0];
+  wire               dbi_b    = lin[DQ_W];
   wire [DQ_W-1:0]    logical  = dbi_b ? ~dq_b : dq_b;
 
   // {flags, bytes as sent}. last is the DQ byte in the UI before beat 0.
@@ -110,18 +156,18 @@ module dram_channel_behav (
                 phase <= PH_CAP;
                 beat  <= '0;
                 b_cap <= bank_pin;
-                c_cap <= pin_dq_i[COL_W-1:0];
+                c_cap <= lin[COL_W-1:0];
               end
               OPC_RD: begin
                 logic [DATA_W+BL-1:0] rd_enc;
                 // pin_dq_o still holds the UI before this one (0 when idle).
-                rd_enc    = dbi_encode(mem[bank_pin][open_row[bank_pin]][pin_dq_i[COL_W-1:0]],
-                                       pin_dq_o[DQ_W-1:0], mr_dbi_en, mr_dbi_ac);
+                rd_enc    = dbi_encode(mem[bank_pin][open_row[bank_pin]][lin[COL_W-1:0]],
+                                       lout[DQ_W-1:0], mr_dbi_en, mr_dbi_ac);
                 phase     <= PH_DRV;
                 beat      <= 3'd1;
                 rd_word   <= rd_enc[DATA_W-1:0];
                 rd_dbi    <= rd_enc[DATA_W +: BL];
-                pin_dq_o  <= {{RED_W{1'b0}}, rd_enc[DATA_W], rd_enc[DQ_W-1:0]};
+                pin_dq_o  <= to_pins({rd_enc[DATA_W], rd_enc[DQ_W-1:0]}, mr_repair_en, mr_repair_lane);
                 pin_dqs_o <= 1'b1;
               end
               default: ;
@@ -150,7 +196,7 @@ module dram_channel_behav (
           if (beat >= BL[2:0]) begin
             phase <= PH_IDLE;
           end else begin
-            pin_dq_o  <= {{RED_W{1'b0}}, rd_dbi[beat[1:0]], rd_word[beat*DQ_W +: DQ_W]};
+            pin_dq_o  <= to_pins({rd_dbi[beat[1:0]], rd_word[beat*DQ_W +: DQ_W]}, mr_repair_en, mr_repair_lane);
             pin_dqs_o <= 1'b1;
             beat      <= beat + 1'b1;
           end

@@ -48,41 +48,77 @@ module tb_hsl_blocks (
     end
   endtask
 
+  // T7 unit: hsl_lane_shift against a loop reference, every lane setting.
   // Declared before the task: SystemVerilog requires declaration before use.
-  logic [7:0] rep_dq;
-  logic       rep_red;
-  logic       rep_en;
-  logic [3:0] rep_lane;
-  logic [7:0] rep_q;
-  logic       rep_db;
+  logic              sh_en;
+  logic [3:0]        sh_lane;
+  logic [LANE_N-1:0] sh_l;
+  logic [PIN_W-1:0]  sh_p;
+  logic [PIN_W-1:0]  sh_rx;
+  logic [LANE_N-1:0] sh_back;
 
-  hsl_lane_repair u_rep (
-    .dq_in(rep_dq),
-    .dbi_in(1'b0),
-    .red_in(rep_red),
-    .repair_en(rep_en),
-    .repair_lane(rep_lane),
-    .dq_out(rep_q),
-    .dbi_out(rep_db)
+  hsl_lane_shift u_shift (
+    .en   (sh_en),
+    .lane (sh_lane),
+    .tx_l (sh_l),
+    .tx_p (sh_p),
+    .rx_p (sh_rx),
+    .rx_l (sh_back)
   );
+
+  function automatic logic [PIN_W-1:0] shift_ref(
+    input logic [LANE_N-1:0] l,
+    input logic              en,
+    input logic [3:0]        lane
+  );
+    integer i;
+    integer k;
+    begin
+      k = (en && (lane < 4'(LANE_N))) ? int'(lane) : PIN_W;
+      shift_ref = '0;
+      for (i = 0; i < PIN_W; i = i + 1) begin
+        if ((i < k) && (i < LANE_N)) begin
+          shift_ref[i] = l[i];
+        end else if (i > k) begin
+          shift_ref[i] = l[i-1];
+        end
+      end
+    end
+  endfunction
 
   task automatic check_repair();
     integer e0;
+    integer k;
+    integer n;
     begin
       e0 = local_errors;
-      rep_dq  = 8'h00;
-      rep_red = 1'b1;
-      rep_en  = 1'b1;
-      rep_lane = 4'd3;
+      // Directed: lane 3 with all ones (T7 at the pins), lane 8 moves DBI to RED.
+      sh_en = 1'b1; sh_lane = 4'd3; sh_l = 9'h0FF; sh_rx = '0;
       #1ps;
-      bump(rep_q == 8'h08, 701);
-      rep_lane = 4'd8;
+      bump(sh_p === 10'h1F7, 701);
+      sh_lane = 4'd8; sh_l = 9'h100;
       #1ps;
-      bump(rep_q == 8'h00, 702);
-      rep_lane = 4'd3;
-      rep_en = 1'b0;
+      bump(sh_p === 10'h200, 702);
+      sh_en = 1'b0;
       #1ps;
-      bump(rep_q == 8'h00, 703);
+      bump(sh_p === 10'h100, 703);
+      // Every setting, random lanes: reference, round trip, and a stuck value
+      // on the skipped pin must not reach the logical side.
+      for (k = 0; k < 16; k = k + 1) begin
+        for (n = 0; n < 64; n = n + 1) begin
+          sh_en   = (n % 8) != 0;
+          sh_lane = 4'(k);
+          sh_l    = 9'($urandom);
+          #1ps;
+          bump(sh_p === shift_ref(sh_l, sh_en, sh_lane), 704);
+          sh_rx = sh_p;
+          if (sh_en && (k < LANE_N)) begin
+            sh_rx[k] = 1'($urandom);
+          end
+          #1ps;
+          bump(sh_back === sh_l, 705);
+        end
+      end
       report("[T7] unit", e0);
     end
   endtask

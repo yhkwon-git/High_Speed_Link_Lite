@@ -12,6 +12,10 @@
 // phy_bypass framer to the channel model, DBI, lane repair, PRBS compare.
 // Tied off in the chip: gearbox din_valid, FIFO wr_en/rd_en, deskew output.
 // Those blocks are exercised by their own instances in tb_hsl_blocks.
+//
+// Lane BIST: while it runs it owns the controller's host port. cmd_ready and
+// rsp_valid to the host are held at 0, so a host beat is neither taken nor
+// answered by the test traffic.
 // -----------------------------------------------------------------------------
 `default_nettype none
 
@@ -59,6 +63,17 @@ module hsl_base_die_lite (
   logic [15:0] err_cnt;
 
   logic phy_valid, phy_ready, phy_rsp_valid;
+  logic mc_cmd_ready, mc_rsp_valid;
+  logic lb_start, lb_busy, lb_done, lb_cmd_valid;
+  logic [1:0] lb_bank;
+  logic [7:0] lb_row;
+  logic [3:0] lb_cmd_opc;
+  logic [hsl_pkg::BANK_W-1:0] lb_cmd_bank;
+  logic [hsl_pkg::ROW_W-1:0] lb_cmd_row;
+  logic [hsl_pkg::COL_W-1:0] lb_cmd_col;
+  logic [hsl_pkg::DATA_W-1:0] lb_cmd_wdata;
+  logic [7:0] lb_lane_err;
+  logic [4:0] lb_err_bursts;
   logic [3:0] phy_opc;
   logic [hsl_pkg::BANK_W-1:0] phy_bank;
   logic [hsl_pkg::ROW_W-1:0] phy_row;
@@ -99,10 +114,17 @@ module hsl_base_die_lite (
     .err_clear    (err_clear),
     .timing0      (timing0),
     .timing1      (timing1),
+    .lb_start     (lb_start),
+    .lb_bank      (lb_bank),
+    .lb_row       (lb_row),
     .train_state  (train_state),
     .train_done   (train_done),
     .mission_mode (mission_mode),
-    .err_cnt      (err_cnt)
+    .err_cnt      (err_cnt),
+    .lb_busy      (lb_busy),
+    .lb_done      (lb_done),
+    .lb_lane_err  (lb_lane_err),
+    .lb_err_bursts(lb_err_bursts)
   );
 
   hsl_training_fsm u_fsm (
@@ -127,14 +149,14 @@ module hsl_base_die_lite (
     .mission_mode  (mission_mode),
     .timing0       (timing0),
     .timing1       (timing1),
-    .cmd_valid     (cmd_valid),
-    .cmd_ready     (cmd_ready),
-    .cmd_opc       (cmd_opc),
-    .cmd_bank      (cmd_bank),
-    .cmd_row       (cmd_row),
-    .cmd_col       (cmd_col),
-    .cmd_wdata     (cmd_wdata),
-    .rsp_valid     (rsp_valid),
+    .cmd_valid     (lb_busy ? lb_cmd_valid : cmd_valid),
+    .cmd_ready     (mc_cmd_ready),
+    .cmd_opc       (lb_busy ? lb_cmd_opc   : cmd_opc),
+    .cmd_bank      (lb_busy ? lb_cmd_bank  : cmd_bank),
+    .cmd_row       (lb_busy ? lb_cmd_row   : cmd_row),
+    .cmd_col       (lb_busy ? lb_cmd_col   : cmd_col),
+    .cmd_wdata     (lb_busy ? lb_cmd_wdata : cmd_wdata),
+    .rsp_valid     (mc_rsp_valid),
     .rsp_rdata     (rsp_rdata),
     .rsp_err       (rsp_err),
     .phy_valid     (phy_valid),
@@ -158,8 +180,28 @@ module hsl_base_die_lite (
     .tx_data   (obs_tx_data),
     .rx_data   (lb_rx_data),
     .prbs_data (prbs_data),
-    .err_cnt   (err_cnt)
+    .err_cnt   (err_cnt),
+    .lb_start      (lb_start),
+    .lb_bank       (lb_bank),
+    .lb_row        (lb_row),
+    .lb_busy       (lb_busy),
+    .lb_cmd_valid  (lb_cmd_valid),
+    .lb_cmd_ready  (mc_cmd_ready),
+    .lb_cmd_opc    (lb_cmd_opc),
+    .lb_cmd_bank   (lb_cmd_bank),
+    .lb_cmd_row    (lb_cmd_row),
+    .lb_cmd_col    (lb_cmd_col),
+    .lb_cmd_wdata  (lb_cmd_wdata),
+    .lb_rsp_valid  (mc_rsp_valid),
+    .lb_rsp_rdata  (rsp_rdata),
+    .lb_done       (lb_done),
+    .lb_lane_err   (lb_lane_err),
+    .lb_err_bursts (lb_err_bursts)
   );
+
+  // The host port is the lane BIST's while it runs.
+  assign cmd_ready = mc_cmd_ready & ~lb_busy;
+  assign rsp_valid = mc_rsp_valid & ~lb_busy;
 
   hsl_phy_top u_phy (
     .clk         (clk),

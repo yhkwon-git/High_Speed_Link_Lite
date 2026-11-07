@@ -54,9 +54,8 @@ module hsl_phy_top (
   logic [DQ_W-1:0]   dbi_prev;
   logic [DATA_W-1:0] dbi_word;
   logic [BL-1:0]     dbi_flags;
-  logic [DQ_W-1:0]   rep_beat [0:BL-1];
-  logic              rep_dbi  [0:BL-1];
-  logic [DATA_W-1:0] pin_data;
+  logic [LANE_N-1:0] tx_sym;
+  logic [LANE_N-1:0] rx_sym;
   logic              clk_phy;
   logic              rd_start;
   logic [DQ_W*DDR_BITS-1:0] gear_beat;
@@ -68,7 +67,6 @@ module hsl_phy_top (
   logic              fifo_full;
   logic              fifo_empty;
   logic [DATA_W-1:0] lb_hold;
-  integer            pi;
 
   assign payload     = prbs_en ? prbs_data : wdata;
   assign obs_tx_data = payload; // compare point is before DBI and repair
@@ -94,26 +92,16 @@ module hsl_phy_top (
     .dbi  (dbi_flags)
   );
 
-  generate
-    for (genvar gb = 0; gb < BL; gb++) begin : g_rep
-      hsl_lane_repair u_rep (
-        .dq_in       (dbi_word[gb*DQ_W +: DQ_W]),
-        .dbi_in      (dbi_flags[gb]),
-        .red_in      (1'b0),
-        .repair_en   (repair_en),
-        .repair_lane (repair_lane),
-        .dq_out      (rep_beat[gb]),
-        .dbi_out     (rep_dbi[gb])
-      );
-    end
-  endgenerate
-
-  always_comb begin
-    pin_data = '0;
-    for (pi = 0; pi < BL; pi = pi + 1) begin
-      pin_data[pi*DQ_W +: DQ_W] = rep_beat[pi];
-    end
-  end
+  // Lane repair at the pin boundary, both directions and every symbol
+  // (headers too, since this framer sends row and col on DQ).
+  hsl_lane_shift u_shift (
+    .en   (repair_en),
+    .lane (repair_lane),
+    .tx_l (tx_sym),
+    .tx_p (pin_dq_o),
+    .rx_p (pin_dq_i),
+    .rx_l (rx_sym)
+  );
 
   hsl_gearbox u_gear (
     .clk_ctrl   (clk),
@@ -162,13 +150,10 @@ module hsl_phy_top (
     .bank        (bank),
     .row         (row),
     .col         (col),
-    .wdata       (pin_data),
-    .raw_data    (dbi_word),
+    .wdata       (dbi_word),
     .dbi_flags   (dbi_flags),
-    .repair_en   (repair_en),
-    .repair_lane (repair_lane),
     .ca          (pin_ca),
-    .dq_o        (pin_dq_o),
+    .sym_o       (tx_sym),
     .dq_oe       (pin_dq_oe),
     .dqs_o       (pin_dqs_o),
     .rd_start    (rd_start)
@@ -188,7 +173,7 @@ module hsl_phy_top (
     .clk       (clk),
     .rst_n     (rst_n),
     .rd_start  (rd_start),
-    .dq_i      (pin_dq_i),
+    .sym_i     (rx_sym),
     .dqs_i     (pin_dqs_i),
     .lb_data   (lb_hold),
     .loopback  (loopback),
@@ -198,7 +183,7 @@ module hsl_phy_top (
 
   wire unused_path = ^{
     gear_ready, gear_beat, gear_valid, deskew_q, deskew_valid,
-    fifo_rdata, fifo_full, fifo_empty, rep_dbi[0]
+    fifo_rdata, fifo_full, fifo_empty
   };
 endmodule
 

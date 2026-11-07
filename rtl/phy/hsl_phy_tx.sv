@@ -9,8 +9,8 @@
 //   RD:   one header, then rd_start so the RX captures BL beats
 //   NOP:  accepted in IDLE, pins stay quiet
 //
-// wdata is post-DBI and post-repair. raw_data is post-DBI and pre-repair
-// so the redundant pin can carry the displaced bit.
+// wdata is post-DBI. sym_o is the logical symbol {DBI, DQ} of each UI;
+// hsl_lane_shift in hsl_phy_top maps it onto the pins, headers included.
 // ready is 0 outside phy_bypass, so the gearbox path cannot pop a command.
 // -----------------------------------------------------------------------------
 `default_nettype none
@@ -27,12 +27,9 @@ module hsl_phy_tx (
   input  wire  [hsl_pkg::ROW_W-1:0]  row,
   input  wire  [hsl_pkg::COL_W-1:0]  col,
   input  wire  [hsl_pkg::DATA_W-1:0] wdata,
-  input  wire  [hsl_pkg::DATA_W-1:0] raw_data,
   input  wire  [hsl_pkg::BL-1:0]     dbi_flags,
-  input  wire                        repair_en,
-  input  wire  [3:0]                 repair_lane,
   output logic [7:0]                 ca,
-  output logic [hsl_pkg::PIN_W-1:0]  dq_o,
+  output logic [hsl_pkg::LANE_N-1:0] sym_o,
   output logic                       dq_oe,
   output logic                       dqs_o,
   output logic                       rd_start
@@ -54,19 +51,10 @@ module hsl_phy_tx (
   logic [ROW_W-1:0] row_r;
   logic [COL_W-1:0] col_r;
   logic [DATA_W-1:0] data_r;
-  logic [DATA_W-1:0] raw_r;
   logic [BL-1:0] dbi_r;
 
   assign ready    = phy_bypass && (st == S_IDLE);
   assign rd_start = (st == S_RH);
-
-  function automatic logic red_of(input logic [2:0] beat);
-    if (repair_en && (repair_lane < 4'd8)) begin
-      red_of = raw_r[beat*DQ_W + 32'(repair_lane)];
-    end else begin
-      red_of = 1'b0;
-    end
-  endfunction
 
   always_ff @(posedge clk or negedge rst_n) begin
     if (!rst_n) begin
@@ -77,21 +65,20 @@ module hsl_phy_tx (
       row_r    <= '0;
       col_r    <= '0;
       data_r   <= '0;
-      raw_r    <= '0;
       dbi_r    <= '0;
       ca       <= '0;
-      dq_o     <= '0;
+      sym_o    <= '0;
       dq_oe    <= 1'b0;
       dqs_o    <= 1'b0;
     end else if (!phy_bypass) begin
       st       <= S_IDLE;
       ca       <= '0;
-      dq_o     <= '0;
+      sym_o    <= '0;
       dq_oe    <= 1'b0;
       dqs_o    <= 1'b0;
     end else begin
       ca       <= '0;
-      dq_o     <= '0;
+      sym_o    <= '0;
       dq_oe    <= 1'b0;
       dqs_o    <= 1'b0;
       case (st)
@@ -102,7 +89,6 @@ module hsl_phy_tx (
             row_r  <= row;
             col_r  <= col;
             data_r <= wdata;
-            raw_r  <= raw_data;
             dbi_r  <= dbi_flags;
             case (opc)
               OPC_ACT: st <= S_ACT;
@@ -115,7 +101,7 @@ module hsl_phy_tx (
         end
         S_ACT: begin
           ca    <= {2'b00, bank_r, OPC_ACT};
-          dq_o  <= {{(PIN_W-ROW_W){1'b0}}, row_r};
+          sym_o <= {{(LANE_N-ROW_W){1'b0}}, row_r};
           dq_oe <= 1'b1;
           dqs_o <= 1'b1;
           st    <= S_IDLE;
@@ -127,7 +113,7 @@ module hsl_phy_tx (
         end
         S_WH: begin
           ca    <= {2'b00, bank_r, OPC_WR};
-          dq_o  <= {{(PIN_W-COL_W){1'b0}}, col_r};
+          sym_o <= {{(LANE_N-COL_W){1'b0}}, col_r};
           dq_oe <= 1'b1;
           dqs_o <= 1'b1;
           idx   <= '0;
@@ -135,7 +121,7 @@ module hsl_phy_tx (
         end
         S_WD: begin
           ca    <= {2'b00, bank_r, OPC_WR};
-          dq_o  <= {red_of(idx), dbi_r[idx[1:0]], data_r[idx*DQ_W +: DQ_W]};
+          sym_o <= {dbi_r[idx[1:0]], data_r[idx*DQ_W +: DQ_W]};
           dq_oe <= 1'b1;
           dqs_o <= 1'b1;
           if (idx == 3'(BL-1)) begin
@@ -146,7 +132,7 @@ module hsl_phy_tx (
         end
         S_RH: begin
           ca       <= {2'b00, bank_r, OPC_RD};
-          dq_o     <= {{(PIN_W-COL_W){1'b0}}, col_r};
+          sym_o    <= {{(LANE_N-COL_W){1'b0}}, col_r};
           dq_oe    <= 1'b1;
           dqs_o    <= 1'b1;
           idx      <= '0;
