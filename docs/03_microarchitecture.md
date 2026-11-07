@@ -37,6 +37,7 @@ hsl_base_die_lite
     hsl_repair
       hsl_secded_enc
       hsl_secded_dec
+  hsl_dfd
 hsl_deskew                 블록 테스트만
 ```
 
@@ -88,6 +89,11 @@ hsl_deskew                 블록 테스트만
 | `0x48` | ECC_INJ | RW | 0 | 주입 때 뒤집을 데이터 비트(32) |
 | `0x4C` | ECC_CNT | RO | 0 | `[15:0]` 정정한 읽기, `[31:16]` 정정 못 한 읽기(포화) |
 | `0x50` | ECC_ADDR | RO | 0 | `[13:0]` 첫 오류 읽기의 호스트 주소 |
+| `0x54` | TRACE | RW | 0 | 쓰기 `[0]` arm(펄스), `[3:1]` trigger(0 ECC 정정 불가, 1 ECC 정정, 2 PRBS 오류, 3 MBIST 실패, 4 필터 bank 명령, 5 수동), `[7:4]` trigger 뒤 항목 수, `[9:8]` 필터 bank, `[10]` 필터 켬, `[11]` 수동 trigger(펄스). 읽기 `[0]` 기록 중, `[1]` trigger됨, `[2]` 멈춤, `[3]` 한 바퀴 돎, `[7:4]` 다음 항목, `[11:8]` trigger 항목 |
+| `0x58` | TRACE_DATA | RW | 0 | 쓰기 `[3:0]` 항목 번호. 읽기 `[31:24]` timestamp, `[23:11]` 행 CA, `[10:6]` 열 `{cmd, bank}`, `[5]` 읽기 데이터, `[4]` ECC 정정, `[3]` ECC 정정 불가, `[2]` PRBS 오류, `[1]` MBIST 실패, `[0]` trigger |
+| `0x5C` | EVCNT0 | RW | 0 | 읽기 `[15:0]` ACT, `[31:16]` RD. 쓰기는 네 카운터를 지움 |
+| `0x60` | EVCNT1 | RO | 0 | `[15:0]` WR, `[31:16]` REFpb |
+| `0x64` | MISR | RW | 0 | 쓰기 `[0]` 동작. 읽기 signature(동작하지 않을 때 모두 1) |
 
 TIMING 필드는 8비트이고, 오른쪽이 LSB다. tRCD와 tWTR_L이 `[7:0]`에 있다. 쓰기는 무시한다. 타이밍은 컨트롤러가 상수로 지키므로, 바꾸려면 컨트롤러 저장소의 `dram_pkg`를 고친다.
 
@@ -228,3 +234,11 @@ FUSE:   리셋 뒤 / load: READ (fz_rd) --> TAKE (fz_rdata 레지스터) --> DEC
 - RD 추적 FIFO(깊이 8): CA 레지스터의 ACT로 bank마다 열린 row를 기억하고, CA 레지스터의 RD마다 `host_addr(bank, 열린 row, col)`을 넣는다. 읽기 반환(FIFO pop)마다 하나 꺼내 s1 레지스터로 간다. 루프백 RD는 CA를 내지 않으므로 넣지 않는다.
 - 루프백 RD는 레지스터한 명령(`lb_rd_q`)으로 s1에 `lb_data`를 넣고, 그 클럭에는 FIFO를 꺼내지 않는다. 루프백은 핀으로 나간 RD가 없을 때만 쓴다. 루프백 응답은 디코더를 거치지 않는다.
 - self-test는 s1 레지스터에 codeword를 넣는다(`st_load`). s1_v가 서지 않으므로 컨트롤러로 응답이 나가지 않는다.
+
+## DFD
+
+- 입력: CA 핀 레지스터(`pin_rca`, `pin_cca`), `dfi_rddata_valid` · `dfi_rddata`, ECC 정정 · 정정 불가 카운터, PRBS 에러 카운터, MBIST 실패 카운터. 이벤트는 카운터가 직전 클럭과 다를 때다.
+- 기록: `take = 기록 중 && (필터를 통과한 명령 || 이벤트 || trigger)`. 항목을 쓸 때 `filled`를 센다(16에서 멈춤). trigger는 `filled ≥ 15 − post`일 때만 받는다.
+- 멈춤: trigger 항목을 쓰면 `post_left = post`. 그 뒤 항목마다 줄이고 마지막 항목을 쓰면 기록을 멈춘다(`post = 0`이면 trigger 항목에서 바로).
+- 읽는 순서: 한 바퀴 돌았으면 다음 항목 번호(`TRACE[7:4]`)가 가장 오래된 항목이다.
+- 데이터패스 리셋에 들어 있다(soft reset으로 지워짐).

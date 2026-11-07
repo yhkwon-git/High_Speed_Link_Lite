@@ -10,6 +10,7 @@
 | 레인 BIST | `CSR_LANE_BIST` | DQ 레인별 에러, 한 레인만 실패했는지, 실패 레인 번호 |
 | MBIST | `CSR_MBIST`, `CSR_MBIST_LOG`, `CSR_MBIST_BITS` | 배열 March 시험의 pass, 실패 읽기 수, 첫 실패 주소와 비트, 실패 워드 로그 16개와 넘침 |
 | ECC | `CSR_ECC`, `CSR_ECC_CNT`, `CSR_ECC_ADDR` | 정정 · 정정 불가 읽기 수, 첫 오류의 호스트 주소와 syndrome, 디코더 self-test 결과 |
+| DFD | `CSR_TRACE`, `CSR_TRACE_DATA`, `CSR_EVCNT0/1`, `CSR_MISR` | CA 핀과 이벤트의 trigger trace, 명령 수, 읽기 데이터 signature |
 | Repair | `CSR_BIRA`, `CSR_REPAIR`, `CSR_FUSE` | 수리 가능 여부와 쓴 spare, repair 표 항목, fuse 로드 결과(정정 · 정정 불가 · 버린 항목) |
 | CKE | `pin_cke` | RESET과 그 외를 핀에서 구분 |
 
@@ -80,6 +81,12 @@ aggressor와 victim은 다른 워드이고, aggressor가 주소 순서로 victim
 - **디코더 self-test**: `CSR_ECC[2]`. 고정 워드의 깨끗한 codeword, 1 bit 오류 39개, 이웃 2 bit 오류 38개를 데이터 경로 디코더에 넣어 정정 데이터와 ce · ue를 확인한다. 정정 플래그를 0에 묶은 디코더는 39개 실패로 잡힌다(T15). 공개된 decoder BIST 방식(알려진 오류 패턴을 주입해 디코더 출력을 확인)을 따랐다.
 - **오류 주입**: `CSR_ECC_INJ`(데이터)와 `CSR_ECC[14:8]`(검사 비트) 마스크를 다음 쓰기 버스트 하나에 건다. 저장된 값이 틀리므로 읽기 경로(핀, FIFO, 디코더, 로그)를 끝까지 시험한다.
 - **배열 시험과의 관계**: MBIST와 repair는 ECC를 끈 상태에서 돌린다. 켜면 1 bit 배열 고장이 정정되어 보이지 않는다(T15의 stuck bit).
+
+## DFD
+
+- **trace buffer**: CA 핀 명령과 이벤트를 16항목 ring에 쓰고, 고른 trigger에서 표시한 뒤 정한 수만큼 더 쓰고 멈춘다. trigger 앞 칸이 다 찬 뒤에만 trigger를 받아 앞뒤 맥락이 항상 남는다. bank 필터로 한 bank의 명령만 남겨 깊이 16을 아낀다.
+- **카운터 · MISR**: 핀의 ACT · RD · WR · REFpb 수와 읽기 데이터 signature. 긴 시험을 값 몇 개로 비교한다(MISR은 기대 signature를 같은 함수로 계산해 비교).
+- **디버그 사례**(README DFD 절, T16): 채널 모델에 심은 refresh 간섭 버그를 ECC 정정 오류 → 첫 오류 주소 → 재현 좁히기 → bank 필터 trace로 찾았다. trace에 REFpb → ACT → RD → 정정 오류가 매번 같은 간격으로 찍혔다.
 
 ## 스캔
 
