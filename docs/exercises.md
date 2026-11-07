@@ -48,7 +48,7 @@ E0부터 E12까지 구현되어 있다. 각 실습은 자기 테스트가 `[SMOK
 
 ## E10. 레인 리페어
 
-`repair_en`일 때 `DQ[repair_lane]`만 `red_in`으로 바꾼다. 레인 번호가 8 이상이면 치환하지 않는다. T7을 추가한다.
+처음에는 `repair_en`일 때 `DQ[repair_lane]`만 `red_in`으로 바꾸는 치환 방식이었다. 지금은 `hsl_lane_shift`가 고장 핀부터 레인을 한 칸씩 RED 쪽으로 민다(핀마다 2:1 mux). T7이 핀 값을, T10이 레인 BIST로 검출 → 재매핑 → 재검사를 본다.
 
 ## E11. PRBS 루프백
 

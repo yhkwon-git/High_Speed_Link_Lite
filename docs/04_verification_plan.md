@@ -5,7 +5,7 @@
 | 계층 | 담당 | 상태 |
 | --- | --- | --- |
 | 스모크 | 섀시가 살아 있고 명령을 버리지 않음 | `tb/tb_hsl_smoke.sv` |
-| 블록 | 리페어, deskew, PRBS, 스케줄러, MC, 기어박스, FIFO | `tb/tb_hsl_blocks.sv` |
+| 블록 | 레인 shift, deskew, PRBS, 스케줄러, MC, 기어박스, FIFO, DBI | `tb/tb_hsl_blocks.sv` |
 | 채널 | 호스트 트래픽과 `dram_channel_behav` | T4, T5, T7, T8 |
 
 스코어보드는 기대 버스트 비교다. T4가 `32'hA5A5_5A5A` 한 워드를 보고, T8이 루프백 RD의 `32'h2222_2222`를 본다.
@@ -31,9 +31,10 @@ E3가 항목 4를 바꿨다. 스텁은 `push_ready`를 0에 묶어서 MISSION에
 | T4 | ACT-WR-RD가 DRAM 모델과 일치 | E5 |
 | T5 | DBI on에서 1이 5개인 beat는 반전되고 DBI 핀이 1, 4개인 beat는 그대로 | E6 |
 | T6 | 두 클럭으로 나눈 FIFO가 버스트를 유지 | E8 |
-| T7 | 리페어 레인 하나가 리던던트 핀과 치환 | E10 |
+| T7 | shift 리페어 핀 값(lane 3 → `1F7`, lane 8 → DBI가 RED로 `200`, lane 15 → 그대로), 블록은 모든 설정에서 참조 모델 일치와 건너뛴 핀의 고장 무시 | E10 |
 | T8 | PRBS 비교는 루프백이면 `ERRCNT` 0, 아니면 증가. 루프백 WR 다음 RD가 채널 모델 값(`32'h1111_1111`)이 아니라 그 WR 버스트(`32'h2222_2222`)를 돌려줌 | E11 |
 | T9 | DBI-AC: 블록은 직렬 참조 모델 · 두 AC 구조 등가 · 랜덤 스트림 전이 수 기대값, 칩은 AC 핀 값, PRBS7 · 55/AA의 off / DC / AC 전이 수와 규칙 위반 0, DBI가 붙은 RD 데이터 복원 | E6 |
+| T10 | 링크 핀 stuck-at → 레인 BIST가 그 레인만 표시 → REMAP · 모델 설정 → 재검사 PASS(8레인 × 0/1), 리페어된 링크로 트래픽 일치, 두 레인 고장은 수리 불가 표시 | E10 |
 
 ## 통과 규칙
 

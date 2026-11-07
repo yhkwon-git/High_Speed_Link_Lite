@@ -17,7 +17,8 @@
 | DFI | DDR PHY 인터페이스 규격. 역할 분리만 참고했고, 이 포트는 DFI가 아니다 |
 | PPA | Performance, Power, Area. 구조를 고를 때 같이 적는 세 축 |
 | DFT / DFD | 테스트 용이성 / 디버그 용이성. 루프백은 DFT, 상태와 에러 카운트는 DFD |
-| Lane repair | 고장난 DQ를 리던던트 핀으로 바꾸는 디지털 먹스 |
+| Lane repair | 고장 핀을 건너뛰도록 레인을 한 칸씩 리던던트 핀 쪽으로 미는 디지털 먹스(핀마다 2:1) |
+| Lane BIST | PRBS 데이터를 쓰고 읽어 레인별로 고장을 찾는 칩 안의 테스트 엔진 |
 | ZQ | 드라이버 임피던스 보정. 회로는 아날로그, 순서는 디지털 FSM |
 | tRCD, tRP, tRAS | ACT 후 컬럼 명령(RD/WR)까지, PRE 후 ACT까지, ACT 후 PRE까지 |
 | tCCD | 컬럼 명령 사이의 채널 간격 |

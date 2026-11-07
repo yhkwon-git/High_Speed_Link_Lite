@@ -14,7 +14,7 @@ hsl_base_die_lite
   hsl_phy_top
     hsl_phy_clk
     hsl_dbi
-    hsl_lane_repair x4
+    hsl_lane_shift
     hsl_gearbox
     hsl_deskew
     hsl_cdc_fifo
@@ -24,6 +24,7 @@ hsl_base_die_lite
     hsl_prbs
     hsl_loopback
     hsl_err_cnt
+    hsl_lane_bist
 ```
 
 ## 호스트 포트
@@ -44,9 +45,10 @@ hsl_base_die_lite
 | `0x0C` | STATUS | RO | | 아래 비트 |
 | `0x10` | TRAIN | RW | wait=2 | `[0]` start, `[4:1]` done 펄스, `[15:8]` wait 저장 |
 | `0x14` | ERRCNT | RW | 0 | 읽기는 카운트, 쓰기는 clear |
-| `0x18` | REMAP | RW | 0 | `[0]` enable, `[7:4]` lane |
+| `0x18` | REMAP | RW | 0 | `[0]` enable, `[7:4]` 건너뛸 핀: 0–7 DQ, 8 DBI, 9 이상은 shift 없음 |
 | `0x1C` | TIMING0 | RW | 패키지 기본값 | `{tCCD, tRAS, tRP, tRCD}` |
 | `0x20` | TIMING1 | RW | 패키지 기본값 | `{tRFC, tRTP, tWR, tWTR}` |
+| `0x24` | LANE_BIST | RW | 0 | 쓰기 `[0]` start, `[5:4]` bank, `[15:8]` row. 읽기 `[0]` busy, `[1]` done, `[2]` pass, `[3]` 한 레인만 실패, `[7:4]` 가장 낮은 실패 레인, `[15:8]` DQ 레인별 에러, `[20:16]` 불일치 버스트 수 |
 
 각 필드는 8비트이고, 오른쪽이 LSB다. tRCD와 tWTR이 `[7:0]`에 있다.
 

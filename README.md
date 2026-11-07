@@ -21,11 +21,11 @@ SK hynix HBM Digital Design (RTL Design) 지원 · 권용현
 
 | 설계 범위 | 회귀 | 코드 커버리지 | 합성 면적 proxy |
 | :---: | :---: | :---: | :---: |
-| **MC · PHY · DFT** | **15 / 15 PASS** | **Line 87.5%**<br>**Branch 96.6%** | **3,748 cells**<br>**630 FF** |
-| RTL 21개 모듈<br>1,542줄 (주석 제외) | SMOKE · T1–T9<br>E7 · E9 · E11 | Toggle 56.6% | Yosys 0.52<br>generic cell |
+| **MC · PHY · DFT** | **16 / 16 PASS** | **Line 87.5%**<br>**Branch 96.6%** | **3,748 cells**<br>**630 FF** |
+| RTL 22개 모듈<br>1,748줄 (주석 제외) | SMOKE · T1–T10<br>E7 · E9 · E11 | Toggle 56.6% | Yosys 0.52<br>generic cell |
 
 > [!NOTE]
-> 커버리지와 합성 수치, PDF 3–20쪽의 파형은 commit `4feb39f`에서 측정했다. 그 뒤 `edb139a`가 PDF 19쪽의 재검증 항목 A, B, E를, `d1f8e2b`가 이후 리뷰 결과(CDC Gray 크로싱과 SDC, 루프백 RD, ModelSim 빌드)를 반영했고, DBI-AC 모드와 T9를 더했다(PDF 21–22쪽). 회귀는 HEAD에서 15/15 PASS다(Verilator 5.052, ModelSim-Altera 10.1d).
+> 커버리지와 합성 수치, PDF 3–20쪽의 파형은 commit `4feb39f`에서 측정했다. 그 뒤 `edb139a`가 PDF 19쪽의 재검증 항목 A, B, E를, `d1f8e2b`가 이후 리뷰 결과(CDC Gray 크로싱과 SDC, 루프백 RD, ModelSim 빌드)를 반영했고, DBI-AC 모드와 T9를 더했다(PDF 21–22쪽). 이후 레인 리페어를 shift 방식으로 바꾸고 레인 BIST와 T10을 더했다. 회귀는 HEAD에서 16/16 PASS다(Verilator 5.052, ModelSim-Altera 10.1d).
 
 ## 개요
 
@@ -42,9 +42,9 @@ HBM base die는 호스트 SoC와 DRAM core die 사이에서 명령 스케줄링,
 | 영역 | 구현 | 위치 |
 | --- | --- | --- |
 | Memory Controller | 깊이 4 링 버퍼 큐, in-order 스케줄러, 뱅크 FSM ×4. tRCD · tRP · tRAS · tRTP · tWR는 뱅크 FSM이, tCCD · tWTR는 스케줄러가 맡는다 | [`rtl/mc/`](rtl/mc/) |
-| PHY digital | Bypass framer, DBI(DC · AC), 레인 리페어(리던던트 DQ 1개), 2:1 toggle-handshake 기어박스, Gray 포인터 비동기 FIFO, 0–4 tap deskew | [`rtl/phy/`](rtl/phy/) |
+| PHY digital | Bypass framer, DBI(DC · AC), shift 방식 레인 리페어(spare 핀 1개, 핀마다 2:1 mux), 2:1 toggle-handshake 기어박스, Gray 포인터 비동기 FIFO, 0–4 tap deskew | [`rtl/phy/`](rtl/phy/) |
 | Control | CSR 9개, 트레이닝 FSM(9개 상태, done 펄스 대기), 리셋 동기화기(비동기 assert, 2-FF 동기 deassert) | [`rtl/ctrl/`](rtl/ctrl/), [`rtl/top/`](rtl/top/) |
-| DFT / DFD | PRBS7, 병렬 루프백, 16 bit 포화 에러 카운터, STATUS · ERRCNT · REMAP 관측점 | [`rtl/dft/`](rtl/dft/) |
+| DFT / DFD | PRBS7, 병렬 루프백, 16 bit 포화 에러 카운터, 레인 BIST(PRBS7 WR/RD로 DQ 레인별 고장 검출), STATUS · ERRCNT · REMAP · LANE_BIST 관측점 | [`rtl/dft/`](rtl/dft/) |
 | PD 인계 | SDC(클럭, 생성 클럭, I/O delay, CDC `set_max_delay`), 클럭 · 리셋 · CDC · 핀 · floorplan 가이드 | [`syn/`](syn/), [`docs/05_pd_guide.md`](docs/05_pd_guide.md) |
 | 검증 | 칩 레벨 스모크, 블록 테스트, DRAM 채널 행동 모델을 한 번에 도는 회귀 | [`tb/`](tb/), [`sim/`](sim/) |
 
@@ -56,8 +56,8 @@ flowchart TB
   subgraph TOP["hsl_base_die_lite"]
     CTRL["<b>Control</b><br/>rst_sync · csr · training_fsm"]
     MC["<b>Memory Controller</b><br/>cmd_queue → scheduler<br/>bank_fsm ×4 · 800 MHz"]
-    PHY["<b>PHY digital</b><br/>dbi → lane_repair<br/>phy_tx · phy_rx"]
-    DFT["<b>DFT / DFD</b><br/>prbs7 · loopback · err_cnt"]
+    PHY["<b>PHY digital</b><br/>dbi · phy_tx · phy_rx<br/>lane_shift (핀 경계)"]
+    DFT["<b>DFT / DFD</b><br/>prbs7 · loopback · err_cnt<br/>lane_bist"]
     CDC["<b>clk_phy</b> · 1.6 GHz<br/>gearbox · deskew · cdc_fifo"]
   end
   DRAM[("DRAM channel model · dram_channel_behav")]
@@ -67,17 +67,18 @@ flowchart TB
   CTRL -.->|"dbi · repair · bypass"| PHY
   MC -->|"phy_req"| PHY
   DFT <-.->|"prbs · compare"| PHY
+  DFT -.->|"lane BIST: 호스트 포트 사용"| MC
   PHY -.- CDC
   PHY <-->|"CK · CKE · CA · DQ · DBI · RED · DQS"| DRAM
 ```
 
 - **명령**: `cmd_*` → `cmd_queue` → `scheduler`(큐 head만 발행, 대상 뱅크의 `timing_ok` 확인) → `phy_tx` framer → `pin_ca`, `pin_dq_o`
-- **쓰기 데이터**: `wdata` 또는 PRBS → DBI(DC 또는 AC) → 레인 리페어 → framer. 핀은 `{RED, DBI, DQ[7:0]}`
-- **읽기**: DRAM 모델(모드에 따라 DBI 인코딩) → `phy_rx`(DBI 복원) → `rsp_*`. 루프백이 켜져 있으면 핀 대신 마지막 WR 버스트(`lb_hold`)를 돌려준다
+- **쓰기 데이터**: `wdata` 또는 PRBS → DBI(DC 또는 AC) → framer → 레인 shift → 핀 `{RED, DBI, DQ[7:0]}`. 헤더(row, col)도 같은 shift를 거친다
+- **읽기**: DRAM 모델(모드에 따라 DBI 인코딩, 같은 레인 shift) → 레인 shift 복원 → `phy_rx`(DBI 복원) → `rsp_*`. 루프백이 켜져 있으면 핀 대신 마지막 WR 버스트(`lb_hold`)를 돌려준다
 - **`clk_phy` 도메인**: 기어박스(32 bit → 16 bit × 2), deskew, 비동기 FIFO. 칩 안에서는 입력이 tie-off이고, 동작은 `tb_hsl_blocks`의 독립 인스턴스로 검증한다
 
 <details>
-<summary>모듈 계층 (21개 모듈 + 패키지)</summary>
+<summary>모듈 계층 (22개 모듈 + 패키지)</summary>
 
 ```text
 hsl_base_die_lite
@@ -91,7 +92,7 @@ hsl_base_die_lite
 ├─ hsl_phy_top
 │  ├─ hsl_phy_clk         2배 클럭 (합성 시 빈 쉘, PLL 자리)
 │  ├─ hsl_dbi             DBI-DC · DBI-AC
-│  ├─ hsl_lane_repair ×4  DQ → RED 치환 (beat마다 1개)
+│  ├─ hsl_lane_shift      shift 방식 레인 리페어 (TX · RX, 핀마다 2:1 mux)
 │  ├─ hsl_gearbox         32 bit → 16 bit × 2
 │  ├─ hsl_deskew          레인별 0–4 tap
 │  ├─ hsl_cdc_fifo        Gray 포인터 레지스터, 2-FF 싱크
@@ -100,7 +101,8 @@ hsl_base_die_lite
 └─ hsl_dft_top
    ├─ hsl_prbs            x⁷ + x⁶ + 1
    ├─ hsl_loopback        병렬 루프백
-   └─ hsl_err_cnt         16 bit 포화 카운터
+   ├─ hsl_err_cnt         16 bit 포화 카운터
+   └─ hsl_lane_bist       레인 BIST (호스트 포트로 PRBS7 WR/RD, DQ 레인별 에러)
 ```
 
 </details>
@@ -115,6 +117,8 @@ hsl_base_die_lite
 | Beat-major 데이터 배치 | DBI와 ECC가 한 UI의 바이트를 한 덩어리로 다룬다 | 레인 단위 접근은 비트를 흩어 읽는다 |
 | CSR은 `rst_sync_n`만, 데이터패스는 `rst_sync_n & ~soft_rst` | CSR까지 soft reset에 넣으면 `soft_rst` 비트가 다음 사이클에 스스로 지워진다 | 리셋 도메인이 둘이 된다 |
 | CDC: Gray 포인터는 소스 클럭의 플롭에서 넘기고, 크로싱은 false path 대신 `set_max_delay` | 조합 XOR 출력이 넘어가면 여러 비트가 바뀌는 순간의 glitch를 싱크 플롭이 잡을 수 있다. false path는 그 경로의 지연을 타이밍이 보지 않게 만든다 | 포인터 레지스터가 늘고, 제약 값을 클럭 주기와 함께 관리해야 한다 |
+| 레인 리페어는 shift 방식: 고장 핀부터 위쪽 레인을 한 칸씩 spare(RED) 쪽으로 | 핀마다 자기 레인과 아래 레인 중 하나를 고르는 2:1 mux라 배선이 이웃 핀까지만 간다. 치환 방식은 모든 레인에서 spare까지 경로가 필요하다 | 고장 핀 위의 레인 번호와 핀 번호가 어긋난다 → 양 끝(PHY, DRAM)이 같은 설정을 가져야 한다. 모델은 mode register 대신 입력으로 받는다 |
+| 레인 BIST는 컨트롤러 호스트 포트로 트래픽을 넣고, 한 컬럼에 WR → RD를 반복 | 뱅크 타이밍을 스케줄러가 그대로 지킨다. 이 framer는 row와 col을 DQ로 보내므로, 한 컬럼만 쓰면 주소를 싣는 레인이 고장나도 모든 명령이 같은 주소를 보게 되어 에러가 그 레인에만 남는다 | BIST 중에는 호스트 포트를 막는다. DBI 레인 고장은 DBI를 끈 상태에서 양방향 반전이 상쇄돼 데이터에 드러나지 않는다 |
 | DBI는 DC 방식(beat의 1이 4개를 넘으면 반전)으로 시작하고, AC 방식(직전 UI 대비 DQ 전이가 4개를 넘으면 반전)을 CSR로 고르게 추가 | DC는 high 개수를 줄여 high에서 종단 전류가 흐르는 I/O에 맞다. HBM처럼 종단이 없는 짧은 채널에서는 전이 수가 스위칭 전력과 SSO를 정하므로 AC가 맞다 | AC는 이전 beat의 반전 여부에 묶인 직렬 체인이다 → 원시 beat끼리 전이를 미리 세어 beat당 2:1 mux 하나로 줄임([DBI-AC](#dbi-ac-off--dc--ac-비교)) |
 
 ## 스펙 요약
@@ -148,9 +152,10 @@ beats_per_burst = BL ÷ DDR_BITS  = 2   → PHY beat 16 bit
 | `0x0C` | STATUS | RO | `train_state`, `train_done`, `mission_mode`, `soft_rst` 에코 |
 | `0x10` | TRAIN | RW | `[0]` start, `[4:1]` done 펄스, `[15:8]` wait |
 | `0x14` | ERRCNT | RW | 읽기는 카운트, 쓰기는 clear |
-| `0x18` | REMAP | RW | `[0]` enable, `[7:4]` lane |
+| `0x18` | REMAP | RW | `[0]` enable, `[7:4]` 건너뛸 핀 (0–7 DQ, 8 DBI, 9 이상은 shift 없음) |
 | `0x1C` | TIMING0 | RW | `{tCCD, tRAS, tRP, tRCD}` |
 | `0x20` | TIMING1 | RW | `{tRFC, tRTP, tWR, tWTR}` |
+| `0x24` | LANE_BIST | RW | 쓰기: `[0]` start, `[5:4]` bank, `[15:8]` row. 읽기: `[0]` busy, `[1]` done, `[2]` pass, `[3]` 한 레인만 실패, `[7:4]` 실패 레인, `[15:8]` 레인별 에러, `[20:16]` 불일치 버스트 수 |
 
 비트 단위 정의는 [`docs/03_microarchitecture.md`](docs/03_microarchitecture.md)에 있다.
 
@@ -173,9 +178,10 @@ beats_per_burst = BL ÷ DDR_BITS  = 2   → PHY beat 16 bit
 | T4 | 채널 | ACT → WR → RD, `A5A5_5A5A` 일치 |
 | T5 | DBI | `0x1F` → 핀 `E0` + DBI 1, `0x0F` → 그대로 |
 | T6 | CDC FIFO | 두 클럭 사이에서 3 word 순서 유지 |
-| T7 | 레인 리페어 | lane 3 치환(핀 `F7`, RED 1), lane 8은 치환하지 않음 |
+| T7 | 레인 리페어 | shift 핀 값: lane 3이면 `FF` → 핀 `1F7`(DQ3 쉼, DBI 핀이 DQ7, RED가 DBI), lane 8(DBI 핀)이면 DBI가 RED로(`200`), lane 15는 그대로. 블록: 모든 설정 × 랜덤에서 참조 모델 일치, 건너뛴 핀의 stuck 값이 RX로 들어오지 않음 |
 | T8 | PRBS · 루프백 | PRBS 비교는 루프백이면 ERRCNT 0, 아니면 증가. 루프백 WR 다음 RD가 채널 모델 값이 아니라 그 WR 버스트(`2222_2222`)를 돌려줌 |
 | T9 | DBI-AC | 블록: 직렬 참조 모델과 랜덤 4,000 버스트 비교, 두 AC 구조 등가, 랜덤 스트림 전이 수가 이항분포 기대값과 일치. 칩: AC 핀 값 정확 비교, PRBS7 · 55/AA 스트림의 off / DC / AC 전이 수와 규칙 위반 0, 채널 모델이 DBI를 붙인 RD 데이터를 RX가 복원 |
+| T10 | 레인 BIST · 리페어 | 칩과 채널 모델 사이 링크 핀에 stuck-at 주입 → BIST가 그 레인만 표시 → REMAP과 모델 설정 → 재검사 PASS. DQ 8레인 × stuck 0/1 = 16/16 검출, 16/16 복구. 리페어된 링크로 DBI-AC 트래픽 16 RD 일치. 두 레인 고장은 수리 불가로 표시 |
 | E7 | 기어박스 | 32 bit → `C3D4`, `A1B2` 두 beat |
 | E9 | Deskew | tap 0 통과, tap 2 지연 |
 | E11 | PRBS seed | 리셋 seed `5A`의 첫 비트 1, seed 0 load 무시 |
@@ -194,11 +200,13 @@ beats_per_burst = BL ÷ DDR_BITS  = 2   → PHY beat 16 bit
 [T2] PASS
 [E7] PASS
 [T6] PASS
-[T9] random stream 40000 UI, DQ+DBI per UI: toggles off 4.00 dc 4.17 ac 3.38, ones off 4.01 dc 3.27 ac 4.36
+[T9] random stream 40000 UI, DQ+DBI per UI: toggles off 4.00 dc 4.16 ac 3.38, ones off 4.00 dc 3.27 ac 4.36
 [T9] unit PASS
 [T9] PRBS7 x254, DQ+DBI per data UI: toggles off 4.01 dc 4.08 ac 3.35, ones off 4.03 dc 3.31 ac 4.13
 [T9] 55/AA x254, DQ+DBI per data UI: toggles off 7.00 dc 7.00 ac 1.64, ones off 4.00 dc 4.00 ac 4.50
 [T9] PASS
+[T10] stuck-at on 8 DQ lanes x {0,1}: found 16/16, repaired 16/16; two lanes flagged not repairable
+[T10] PASS
 [ALL] PASS
 ```
 
@@ -220,7 +228,7 @@ beats_per_burst = BL ÷ DDR_BITS  = 2   → PHY beat 16 bit
 | phy_tx | 83.3% | 100.0% | 81.8% |
 | phy_rx | 66.7% | 87.5% | 60.8% |
 | dbi | 100.0% | 100.0% | 95.7% |
-| lane_repair | 100.0% | 100.0% | 93.8% |
+| lane_repair (이후 lane_shift로 교체) | 100.0% | 100.0% | 93.8% |
 | gearbox | 100.0% | 100.0% | 51.6% |
 | deskew | 100.0% | 75.0% | 93.0% |
 | cdc_fifo | 100.0% | 100.0% | 31.0% |
@@ -248,8 +256,8 @@ DBI-AC는 beat마다 직전 UI에 실제로 나간 바이트와 비교해, DQ 8�
 | PRBS7, WR 254개 (칩 핀) | 전이 | 4.01 | 4.08 | **3.35 (−16%)** |
 | | high | 4.03 | **3.31 (−18%)** | 4.13 |
 | `55 AA 55 AA` 반복, WR 254개 (칩 핀) | 전이 | 7.00 | 7.00 | **1.64 (−77%)** |
-| 균등 랜덤 연속 스트림 40,000 UI (블록) | 전이 | 4.00 | 4.17 | **3.38** |
-| | high | 4.01 | 3.27 | 4.36 |
+| 균등 랜덤 연속 스트림 40,000 UI (블록) | 전이 | 4.00 | 4.16 | **3.38** |
+| | high | 4.00 | 3.27 | 4.36 |
 
 <sub>칩 핀 값은 T9가 WR 데이터 UI 4개(헤더 → beat 0 포함)에서 잰 값이다. 랜덤 스트림은 헤더 없이 버스트가 이어지는 데이터 전용 DQ를 가정하며, 이항분포 기대값(off 4.00, DC 4.16, AC 3.37)과 ±0.05 안에서 맞는지 T9가 검사한다.</sub>
 
@@ -267,6 +275,32 @@ AC 규칙은 직렬 체인이다. beat b의 기준은 beat b−1이 반전되어
 
 <sub>`syn/ppa_block.sh`(sv2v → Yosys 0.52 → OpenSTA 3.1, 입력 BUF_X1 구동, 출력 2 fF). 직렬 구조는 이 블록 하나로 컨트롤러 주기 1.25 ns를 넘는다. mux 체인은 0.37 ns를 남기지만, 칩 경로에는 큐 head 플롭, PRBS 먹스, 레인 리페어가 앞뒤로 붙으므로 칩 STA(다음 단계)에서 다시 확인한다.</sub>
 
+## 레인 리페어: 검출 → 재매핑 → 재검사
+
+논리 레인 9개 `{DBI, DQ[7:0]}`가 핀 10개 `{RED, DBI, DQ[7:0]}`를 쓴다. 고장 핀 k가 정해지면 k보다 아래 레인은 제자리, k부터 위 레인은 한 칸씩 위 핀으로 가고, 핀 k는 0으로 쉰다. RED는 마지막 레인(DBI)을 받는다. 수신 쪽은 반대로 푼다. 핀마다 "내 레인 또는 아래 레인"을 고르는 2:1 mux 하나라 어떤 레인도 이웃 핀보다 멀리 가지 않는다.
+
+```text
+lane 3이 고장인 경우      DQ0 DQ1 DQ2 DQ3 DQ4 DQ5 DQ6 DQ7 DBI RED   (핀)
+                         L0  L1  L2  --  L3  L4  L5  L6  L7  L8    (실리는 논리 레인)
+```
+
+shift는 핀 경계(`hsl_phy_top`)에서 모든 심볼에 걸린다. 이 framer는 ACT의 row와 RD/WR의 col도 DQ로 보내므로 헤더도 같은 shift를 거쳐야 하고, 채널 모델은 mode register 대신 `mr_repair_en` · `mr_repair_lane` 입력으로 같은 설정을 받는다(RTL과 따로 짠 루프 구현).
+
+| 단계 | 하는 일 | T10 결과 |
+| --- | --- | --- |
+| 검출 | `LANE_BIST` start → 컨트롤러 호스트 포트로 ACT, (WR col 0 → RD col 0) × 16, PRE. PRBS7 워드를 쓰고 바로 읽어 DQ 레인별로 비교, sticky 기록 | stuck-at 0/1 × DQ 8레인: 16/16이 정확히 그 레인 하나로 표시 |
+| 재매핑 | 펌웨어(TB)가 `REMAP`에 그 핀을 쓰고 DRAM 쪽에도 같은 설정 | |
+| 재검사 | BIST 다시 실행 | 16/16 PASS. 리페어된 링크(lane 5 stuck-at-1)로 DBI-AC 켠 WR/RD 16개 일치 |
+| 한계 | spare가 하나라 두 레인 고장은 고칠 수 없음 | lane 2 · 6 동시 고장: 에러 `0x44`, "한 레인만 실패" 비트 0 |
+
+| 블록 (Nangate45 typical) | 면적 | Cell | FF | 최대 경로 |
+| --- | ---: | ---: | ---: | ---: |
+| `hsl_lane_shift` (TX + RX) | 61 µm² | 54 | 0 | 0.227 ns |
+| 이전 치환 방식 `hsl_lane_repair` × 4 beat (TX만, commit `4d38ae9`) | 143 µm² | 136 | 0 | 0.177 ns |
+| `hsl_lane_bist` (PRBS7 2개, 명령 순서, 레인 비교) | 616 µm² | 339 | 50 | 0.705 ns |
+
+<sub>`syn/ppa_block.sh`. 치환 방식은 버스트(4 beat × 8 bit) 단계에서 beat마다 인스턴스가 하나씩 필요했고 RED로 옮길 비트를 고르는 mux가 framer에 따로 있었다. shift는 UI 심볼 하나에 걸어 한 벌로 TX와 RX를 함께 처리한다.</sub>
+
 ## PPA · PD 인계
 
 Yosys 0.52 generic cell 기준의 면적 proxy다(commit `4feb39f`, 계층 합성, 인스턴스 수 반영). 칩 단위의 µm², mW, slack은 아직 적지 않는다(Nangate45 칩 STA는 다음 단계).
@@ -274,7 +308,7 @@ Yosys 0.52 generic cell 기준의 면적 proxy다(commit `4feb39f`, 계층 합�
 | 블록 | Cell | FF | 비중 | 구성 (cell) |
 | --- | ---: | ---: | ---: | --- |
 | Memory Controller | 1,848 | 334 | 49% | queue 585 · bank_fsm ×4 1,028 · scheduler 200 |
-| PHY digital | 1,191 | 178 | 32% | tx 365 · rx 353 · dbi 181 · lane_repair ×4 260 |
+| PHY digital | 1,191 | 178 | 32% | tx 365 · rx 353 · dbi 181 · lane_repair ×4 260 (이후 lane_shift로 교체) |
 | CSR | 363 | 89 | 10% | 주소 9개와 읽기 mux |
 | DFT | 287 | 23 | 8% | prbs 81 · err_cnt 77 · loopback 32 |
 | 기타 | 59 | 6 | 2% | training_fsm 56 · rst_sync 2 |
@@ -347,8 +381,8 @@ rtl/
   top/           hsl_base_die_lite, hsl_rst_sync
   ctrl/          hsl_csr, hsl_training_fsm
   mc/            hsl_mc_top, hsl_cmd_queue, hsl_scheduler, hsl_bank_fsm
-  phy/           hsl_phy_top, phy_tx/rx, dbi, lane_repair, gearbox, deskew, cdc_fifo, phy_clk
-  dft/           hsl_dft_top, hsl_prbs, hsl_loopback, hsl_err_cnt
+  phy/           hsl_phy_top, phy_tx/rx, dbi, lane_shift, gearbox, deskew, cdc_fifo, phy_clk
+  dft/           hsl_dft_top, hsl_prbs, hsl_loopback, hsl_err_cnt, hsl_lane_bist
 tb/              tb_hsl_smoke (top), tb_hsl_blocks, models/dram_channel_behav
 sim/             filelist.f, run_smoke.ps1, run_smoke.sh, Makefile
 syn/             filelist.f, constraints/hsl_base_die_lite.sdc, ppa_block.sh
@@ -379,7 +413,8 @@ portfolio-deck/  포트폴리오 PDF, PPTX (3–20쪽 4feb39f, 21–22쪽 이후
 - REF는 인코딩만 있고 스케줄러가 발행하지 않는다. REF나 예약 opcode가 큐 head에 오면 soft reset 전까지 큐가 멈춘다(이슈 D)
 - `clk_phy` 경로(기어박스, deskew, FIFO)는 칩 안에서 입력이 tie-off라 합성에서 지워진다. 동작은 블록 테스트로만 확인했다(이슈 C)
 - 루프백은 병렬 루프백만 있다. 직렬화 이후를 도는 핀 루프백은 없다
-- 레인 리페어는 TX 핀까지만 검증했다. RX와 DRAM 모델은 RED 핀을 쓰지 않는다
+- 레인 BIST는 DQ 8레인만 진단한다. DBI 핀 고장은 DBI를 끈 상태에서 양방향 반전이 상쇄돼 데이터에 드러나지 않는다(경계 스캔 방식의 핀 테스트가 필요)
+- 레인 BIST는 컨트롤러를 거치므로 호스트 큐가 빈 상태에서 시작해야 한다. 칩은 BIST 동안 호스트 포트를 막을 뿐 그 조건을 검사하지 않는다
 
 다음 단계:
 
@@ -390,6 +425,7 @@ portfolio-deck/  포트폴리오 PDF, PPTX (3–20쪽 4feb39f, 21–22쪽 이후
 - [ ] 실제 셀 라이브러리로 STA, 면적, 전력 수치 확보
 - [ ] Out-of-order 스케줄러. 뱅크 FSM을 분리해 둔 구조를 그대로 쓴다
 - [x] DBI-AC 모드와 off / DC / AC 전이 비교, DBI 읽기 경로 검증(T9)
+- [x] shift 방식 레인 리페어와 레인 BIST: 검출 → 재매핑 → 재검사(T10)
 
 ## 관련 프로젝트
 
