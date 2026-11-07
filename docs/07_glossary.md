@@ -38,3 +38,15 @@
 | tWTR, tRTW | 쓰기 후 읽기까지, 읽기 후 쓰기까지(데이터 버스 방향 전환) |
 | tRFC, tREFI | refresh가 막는 시간, refresh 주기 |
 | Pseudo-channel | HBM2 채널을 둘로 나눈 동작 단위. 이 모델은 그 단위 하나를 더 축소했다 |
+| March 알고리즘 | 주소를 오름 · 내림 순서로 돌며 읽기(r0 · r1)와 쓰기(w0 · w1)를 정해진 순서로 하는 배열 시험. MATS+, March X, March C-가 쓰인다(`hsl_mbist`) |
+| SA · TF · CF | stuck-at(값 고정), transition(한 방향 전이가 안 됨), coupling(다른 셀의 전이나 상태가 이 셀을 바꿈: inversion · idempotent · state) |
+| BIRA | built-in redundancy analysis. 실패 목록으로 spare row · column을 어디에 쓸지 고른다(`hsl_bira`) |
+| must-repair | spare column보다 많은 실패가 있는 row는 반드시 spare row로(반대도 같음) 고쳐야 한다는 규칙 |
+| soft · hard repair | soft: 레지스터(repair 표)로 바로 적용, 리셋하면 사라짐. hard: fuse에 기록, 리셋 뒤 자동으로 다시 로드 |
+| fuse (OTP) | 한 번 쓰면 0 → 1만 되는 저장소. 여기서는 TB의 모델, 워드마다 SECDED |
+| SECDED | single error correct, double error detect. 여기서는 (39,32) 확장 Hamming 부호 |
+| syndrome | 디코더가 계산한 검사 결과. 1 bit 오류면 그 비트의 위치를 가리킨다 |
+| CE · UE | correctable(정정한) 오류 · uncorrectable(정정 못 한) 오류 |
+| MISR | multiple-input signature register. 긴 데이터 스트림을 32 bit 값 하나로 압축해 비교한다 |
+| trace buffer · trigger | 신호를 ring에 계속 기록하다가 조건(trigger)이 오면 그 앞뒤를 남기고 멈추는 디버그 기록 장치 |
+| IEEE 1500 | 코어 시험 접근 표준. WIR(명령 레지스터), WBY(bypass), WDR(데이터 레지스터)과 직렬 제어 신호로 시험 기능에 닿는다. HBM이 시험 포트로 쓴다 |

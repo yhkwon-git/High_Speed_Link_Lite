@@ -82,4 +82,4 @@ DBI와 ECC는 한 UI의 바이트를 한 덩어리로 본다. 레인 단위로 �
 
 ## 핸드셰이크 규칙
 
-`valid && ready`일 때만 요청과 응답이 넘어간다. `ready`가 0인데 `valid`를 무시하면 실패다. `req_ready`는 MISSION이면서 `phy_en`이고 컨트롤러가 받을 수 있을 때 1이다. 컨트롤러는 큐가 찼을 때, 진행 중인 요청이 15개(tag)일 때, 쓰기 주소가 읽기 큐에 있을 때 0을 낸다. 호스트가 `rsp_ready`를 내리면 응답이 쌓여 tag가 차고 결국 `req_ready`가 0이 된다(SMOKE). 레인 BIST가 도는 동안 호스트의 `req_ready`와 `rsp_valid`는 0이다.
+`valid && ready`일 때만 요청과 응답이 넘어간다. `ready`가 0인데 `valid`를 무시하면 실패다. `req_ready`는 MISSION이면서 `phy_en`이고 컨트롤러가 받을 수 있을 때 1이다. 컨트롤러는 큐가 찼을 때, 진행 중인 요청이 15개(tag)일 때, 쓰기 주소가 읽기 큐에 있을 때 0을 낸다. 호스트가 `rsp_ready`를 내리면 응답이 쌓여 tag가 차고 결국 `req_ready`가 0이 된다(SMOKE). 레인 BIST나 MBIST가 도는 동안 호스트의 `req_ready`와 `rsp_valid`는 0이다.

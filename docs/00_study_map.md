@@ -8,20 +8,20 @@
 | PPA로 아키텍처를 고른다 | `docs/02_architecture.md` |
 | RTL 설계와 기능 검증 | `rtl/`, `tb/`, `docs/04_verification_plan.md` |
 | Physical Design용 가이드, floorplan 관점 | `docs/05_pd_guide.md`, `syn/constraints/` |
-| 웨이퍼 테스트와 실리콘 이슈를 볼 수 있는 상태 | `docs/06_dft_plan.md`, `rtl/dft/` |
+| 웨이퍼 테스트와 실리콘 이슈를 볼 수 있는 상태 | `docs/06_dft_plan.md`, `docs/08_test_flow.md`, `rtl/dft/` |
 | High-Speed Digital PHY | `rtl/phy/` |
 | DRAM 메모리 컨트롤러 | `rtl/mc/` |
-| DFT / DFD | `rtl/dft/`, CSR의 `ERRCNT`와 `STATUS` |
+| DFT / DFD | `rtl/dft/`: 레인 BIST, March MBIST, BIRA · repair · fuse, trace · 카운터 · MISR(`hsl_dfd`), IEEE 1500 방식 포트(`hsl_w1500`) |
 | 저전력 | CKE, DBI(E6), 놀고 있는 구간의 드라이버 enable |
-| 고신뢰성 | 레인 리페어(E10), 포화 에러 카운터 |
+| 고신뢰성 | 레인 리페어(E10), spare row · column repair와 fuse, SECDED ECC(`rtl/phy/hsl_ecc.sv`), 포화 에러 카운터 |
 | 풀커스텀과의 경계 | 핀 리스트. 디지털은 값과 enable, 아날로그는 드라이버와 샘플러 |
 
 ## 3분 설명
 
 1. Base die 디지털은 호스트와 DRAM 코어 다이 사이에 있다. 표준 HBM에서는 컨트롤러가 호스트에 있고, 이 슬라이스는 컨트롤러를 base die로 옮긴 custom HBM 구조를 가정한다. 스터디 슬라이스는 DQ 8비트, 버스트 4, 뱅크 4개다.
 2. 스펙을 먼저 적고, 컨트롤러와 PHY를 버스트 단위로 나눴다. 시뮬 클럭은 컨트롤러 800 MHz, PHY 1.6 GHz다. 뱅크 타이밍을 먼저 닫은 뒤 기어박스와 비동기 FIFO를 그 클럭에 올렸다.
-3. 지금 도는 것은 CSR, 리셋 동기화, done 펄스 트레이닝, 메모리 컨트롤러(읽기 · 쓰기 큐, FR-FCFS, per-bank refresh), DFI 형태 경계, mission 데이터패스(CA 핀, TX 기어와 WDQS, RDQS 캡처와 Gray FIFO), DBI(DC · AC), shift 레인 리페어와 레인 BIST, 읽기 레벨링, PRBS 병렬 루프백이다.
-4. 회귀는 `sim/run_smoke.ps1` 한 번이다. 스모크와 T1–T12가 같이 돌고, 호스트 응답은 모두 스코어보드가, 핀의 명령은 채널 모델이 검사한다. PD 가이드의 포인터 경로는 `set_max_delay`이고 false path가 아니다.
+3. 지금 도는 것은 CSR, 리셋 동기화, done 펄스 트레이닝, 메모리 컨트롤러(읽기 · 쓰기 큐, FR-FCFS, per-bank refresh), DFI 형태 경계, mission 데이터패스(CA 핀, TX 기어와 WDQS, RDQS 캡처와 Gray FIFO), DBI(DC · AC), shift 레인 리페어와 레인 BIST, 읽기 레벨링, PRBS 병렬 루프백, 데이터 ECC다. 시험 쪽에는 March MBIST, BIRA와 fuse repair, trace buffer · 카운터 · MISR, IEEE 1500 방식 포트가 있다.
+4. 회귀는 `sim/run_smoke.ps1` 한 번이다. 스모크와 T1–T17이 같이 돌고, 호스트 응답은 모두 스코어보드가, 핀의 명령은 채널 모델이 검사한다. PD 가이드의 포인터 경로는 `set_max_delay`이고 false path가 아니다.
 5. 컨트롤러는 Mini DRAM Controller 저장소의 v4 RTL을 그대로 쓴다. 이 저장소가 다루는 것은 그 경계(행 · 열 명령 버스, WL 뒤 쓰기 데이터, `rddata_valid`)와 칩 레벨 검증이다. 처음의 in-order 컨트롤러와 bypass framer는 `0193c04`에서 없앴다.
 
 ## 공개 HBM과 이 모델의 거리
