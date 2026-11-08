@@ -25,6 +25,7 @@ hsl_base_die_lite
       hsl_lane_shift
       hsl_tx_gear
       hsl_cdc_fifo
+      hsl_rst_sync         RDQS 쪽 리셋 (RDQS로 deassert)
       hsl_ecc
         hsl_secded_enc x2
         hsl_secded_dec
@@ -78,9 +79,9 @@ hsl_deskew                 블록 테스트만
 | `0x18` | REMAP | RW | 0 | `[0]` enable, `[7:4]` 건너뛸 핀: 0–7 DQ, 8 DBI, 9 이상은 shift 없음 |
 | `0x1C` | TIMING0 | RO | | `{tCCD_L, tRAS, tRP, tRCD}`, 컨트롤러 `dram_pkg` 상수 |
 | `0x20` | TIMING1 | RO | | `{tRFC, tRTP, tWR, tWTR_L}`, 컨트롤러 `dram_pkg` 상수 |
-| `0x24` | LANE_BIST | RW | 0 | 쓰기 `[0]` start, `[5:4]` bank, `[15:8]` row. 읽기 `[0]` busy, `[1]` done, `[2]` pass, `[3]` 한 레인만 실패, `[7:4]` 가장 낮은 실패 레인, `[15:8]` DQ 레인별 에러, `[20:16]` 불일치 버스트 수 |
-| `0x28` | RDTRAIN | RW | 0 | 쓰기 `[0]` start, `[6:4]` 읽어 볼 레인. 읽기 `[0]` busy, `[1]` done, `[2]` 모든 레인에서 eye 찾음, `[6:4]` 레인, `[12:8]` 그 레인의 코드, `[20:16]` eye 시작, `[29:24]` eye 폭 |
-| `0x2C` | MBIST | RW | 0 | 쓰기 `[0]` start, `[2:1]` 알고리즘(0 MATS+, 1 March X, 2 March C-, 3은 2로), `[5:4]` bank, `[15:8]` 첫 row, `[19:16]` row 수 − 1, `[22:20]` log2 컬럼 수(4보다 크면 4). 읽기 `[0]` busy, `[1]` done, `[2]` pass(done이고 실패 0), `[3]` 로그 넘침, `[8:4]` 로그의 실패 워드 수, `[31:16]` 실패 읽기 수(포화) |
+| `0x24` | LANE_BIST | RW | 0 | 쓰기 `[0]` start, `[5:4]` bank, `[15:8]` row. 읽기 `[0]` busy, `[1]` done, `[2]` pass, `[3]` 한 레인만 실패, `[7:4]` 가장 낮은 실패 레인, `[15:8]` DQ 레인별 에러, `[20:16]` 불일치 버스트 수, `[21]` 시작 거절(요청 포트 닫힘: done 1, pass 0) |
+| `0x28` | RDTRAIN | RW | 0 | 쓰기 `[0]` start, `[6:4]` 읽어 볼 레인. 읽기 `[0]` busy, `[1]` done, `[2]` 모든 레인에서 eye 찾음, `[3]` 시작 거절, `[6:4]` 레인, `[12:8]` 그 레인의 코드, `[20:16]` eye 시작, `[29:24]` eye 폭 |
+| `0x2C` | MBIST | RW | 0 | 쓰기 `[0]` start, `[2:1]` 알고리즘(0 MATS+, 1 March X, 2 March C-, 3은 2로), `[5:4]` bank, `[15:8]` 첫 row, `[19:16]` row 수 − 1, `[22:20]` log2 컬럼 수(4보다 크면 4). 읽기 `[0]` busy, `[1]` done, `[2]` pass(done이고 실패 0이고 거절 아님), `[3]` 로그 넘침, `[8:4]` 로그의 실패 워드 수, `[9]` 시작 거절, `[31:16]` 실패 읽기 수(포화) |
 | `0x30` | MBIST_LOG | RW | 0 | 쓰기 `[3:0]` 읽을 로그 항목. 읽기 `[13:0]` 첫 실패 읽기의 호스트 주소, `[23:16]` 그 항목 `{row offset[3:0], col[3:0]}`, `[27:24]` 항목 번호 |
 | `0x34` | MBIST_BITS | RO | 0 | 첫 실패 읽기에서 기대값과 다른 비트 |
 | `0x38` | BIRA | RW | 0 | 쓰기 `[0]` start(마지막 MBIST 로그, MBIST가 돌 때는 무시), `[1]` 결과를 repair 표에(수리 가능일 때만), `[2]` 표 비우기. 읽기 `[0]` busy, `[1]` done, `[2]` 수리 가능, `[5:4]` 쓴 spare row 수, `[7:6]` 쓴 spare col 수 |
@@ -189,21 +190,24 @@ IDLE --start--> P_WR: 쓰기 16개 (컬럼 0..15, PRBS7) --> P_DRAIN: q_empty �
 
 `LANE_BIST`의 bank와 row는 DRAM 쪽 주소다. BIST는 `host_addr`로 호스트 주소를 만들어 요청 포트에 낸다. 쓰기가 큐에 남은 채 읽으면 컨트롤러가 큐에서 답해 링크를 거치지 않으므로, 컨트롤러의 `q_empty`(두 큐가 모두 빔)를 기다린 뒤 읽는다. 큐가 비면 모든 쓰기의 WR이 핀으로 나간 것이고, 같은 뱅크의 RD는 컨트롤러가 tWTR_L을 지키므로 데이터보다 먼저 닿지 않는다(채널 모델이 검사). 읽은 워드는 같은 seed의 PRBS7과 beat마다 비교해 DQ 레인별로 sticky 기록한다.
 
+start 때 요청 포트가 닫혀 있으면(`open` = 0: MISSION이 아니거나 `phy_en` = 0) 요청을 내지 않고 그 클럭에 `done`과 `refused`를 세운다(pass 0, `LANE_BIST[21]`). 이 검사가 없으면 엔진은 `req_ready`를 끝없이 기다린다. MBIST(`MBIST[9]`)와 읽기 레벨링(`RDTRAIN[3]`)도 같다. 도는 중에 포트가 닫히는 경우는 잡지 않으며 soft reset이 푼다.
+
 ## MBIST
 
 ```text
 IDLE --start--> LOAD: 다음 연산의 주소 · 데이터 · 로그 키를 플롭에 --> ISSUE: 요청 하나
+     (요청 포트가 닫혀 있으면 LOAD로 가지 않고 done · refused)
   쓰기: --> WACK 응답 --> DRAIN q_empty --> GUARD 4클럭 --> NEXT
-  읽기: --> RWAIT 응답, 기대값과 비교, 실패면 기록 --> NEXT
+  읽기: --> RWAIT 응답, 기대값과의 차이를 레지스터로 --> NEXT (실패면 기록)
 NEXT: 같은 요소의 두 번째 연산, 다음 워드(요소 방향), 다음 요소, 또는 done --> LOAD
 ```
 
 영역은 `MBIST` 쓰기의 bank, 첫 row, row 수, 컬럼 수다. 워드 순서는 row마다 컬럼이 빠르게 돈다(`idx = row offset × 2^ncl + col`). 주소는 `host_addr(bank, row0 + row offset, col)`로 만들어 요청 포트에 낸다. 요소 표는 `{last, down, two, op0, op1}` 7 bit이고 연산은 `{write, value}`다.
 
 - **순서**: 연산을 하나씩 낸다. 컨트롤러는 다른 주소의 요청 순서를 바꾸므로, March 순서를 배열에 그대로 전하려면 앞 연산이 배열에 닿은 뒤 다음을 낸다. 쓰기는 posted 응답 뒤 `q_empty`(WR이 핀으로 나감)와 4클럭(WL과 TX 기어를 지나 배열에 닿음)을, 읽기는 응답을 기다린다.
-- **기록**: 실패 읽기마다 `fail_cnt`(16 bit 포화). 첫 실패는 주소와 다른 비트를 남긴다. 로그는 실패 워드를 `{row offset, col}`로 최대 16개, 같은 워드는 한 번만(16개 비교) 넣고, 17번째 새 워드부터는 `log_ovf`를 세운다.
+- **기록**: 읽기 응답과 기대값의 차이(`diff_q`)를 RWAIT에서 레지스터로 받고, NEXT에서 실패 읽기마다 `fail_cnt`(16 bit 포화)를 센다. 첫 실패는 주소와 다른 비트를 남긴다. 로그는 실패 워드를 `{row offset, col}`로 최대 16개, 같은 워드는 한 번만(16개 비교) 넣고, 17번째 새 워드부터는 `log_ovf`를 세운다.
 - **포트 공유**: `hsl_dft_top`이 레인 BIST와 MBIST를 한 테스트 포트(`tp_*`)로 묶는다. 한 번에 하나만 돌고, 다른 엔진이 도는 동안 또는 같은 클럭에 온 start는 잡아 두었다가 포트가 비면 낸다(레인 BIST 우선). 읽기 레벨링이 자기가 낸 레인 BIST의 busy를 기다리므로 start를 버리지 않는다.
-- **타이밍**: 요청 출력(`req_addr`, `req_write`, `req_wdata`)은 플롭이다. 조합 주소(가변 shift, 덧셈, XOR 맵)가 컨트롤러의 주소 비교 앞에 붙으면 칩 STA에서 −0.749 ns였다.
+- **타이밍**: 요청 출력(`req_addr`, `req_write`, `req_wdata`)은 플롭이다. 조합 주소(가변 shift, 덧셈, XOR 맵)가 컨트롤러의 주소 비교 앞에 붙으면 칩 STA에서 −0.749 ns였다. 응답 쪽도 컨트롤러 응답 FIFO → 비교 → 로그 중복 검사가 한 클럭이면 −0.099 ns여서, 차이를 레지스터로 받고 다음 클럭에 기록한다(`3d596a4`).
 
 ## Repair
 
@@ -216,7 +220,7 @@ FUSE:   리셋 뒤 / load: READ (fz_rd) --> TAKE (fz_rdata 레지스터) --> DEC
         program: PGM x 4 (항목 a의 SECDED 워드를 fz_wdata로)
 ```
 
-- BIRA는 MBIST 로그 전체(`log_keys`, 항목 16 × 8 bit)와 마지막 영역(bank, 첫 row)을 받는다. col spare는 영역의 첫 row가 16-row 블록 경계일 때만 쓴다.
+- BIRA는 MBIST 로그 전체(`log_keys`, 항목 16 × 8 bit)와 마지막 영역(bank, 첫 row)을 받는다. 거절된 MBIST는 넘친 로그처럼 수리 불가로 본다(`log_ovf || refused`). col spare는 영역의 첫 row가 16-row 블록 경계일 때만 쓴다.
 - spare 슬롯은 쓴 순서대로 채운다(row 0 → 1, col 0 → 1). 순서 `ord`의 bit t가 1이면 t번째로 쓰는 spare가 row다. 남은 spare 수 L에 대해 bit L 이상이 0이고 1의 개수가 남은 row 수인 순서만 시도한다.
 - repair 표는 데이터패스 리셋에 들어 있다. soft reset도 표를 비우고, 이어서 fuse 로드가 다시 채운다.
 - fuse 포트: `fz_rd`와 `fz_addr` 다음 클럭에 `fz_rdata`. `fz_pgm`은 `fz_wdata`를 OR로 굽는다. SECDED (39,32)는 확장 Hamming이다. 비트 0이 전체 패리티이고, 위치 2^k(1, 2, 4, 8, 16, 32)가 체크 비트, 나머지 32개가 데이터다. 항목은 데이터 `[15:0]`에 들어간다.
@@ -238,7 +242,7 @@ FUSE:   리셋 뒤 / load: READ (fz_rd) --> TAKE (fz_rdata 레지스터) --> DEC
 
 ## DFD
 
-- 입력: CA 핀 레지스터(`pin_rca`, `pin_cca`), `dfi_rddata_valid` · `dfi_rddata`, ECC 정정 · 정정 불가 카운터, PRBS 에러 카운터, MBIST 실패 카운터. 이벤트는 카운터가 직전 클럭과 다를 때다.
+- 입력: CA 핀 레지스터(`pin_rca`, `pin_cca`), `dfi_rddata_valid` · `dfi_rddata`, ECC 정정 · 정정 불가 카운터, PRBS 에러 카운터, MBIST 실패 카운터. 이벤트는 카운터가 직전 클럭과 다르고 0이 아닐 때다. clear나 MBIST 재시작으로 0이 되는 것은 이벤트가 아니고, 포화한 카운터는 더 바뀌지 않으므로 이벤트도 없다.
 - 기록: `take = 기록 중 && (필터를 통과한 명령 || 이벤트 || trigger)`. 항목을 쓸 때 `filled`를 센다(16에서 멈춤). trigger는 `filled ≥ 15 − post`일 때만 받는다.
 - 멈춤: trigger 항목을 쓰면 `post_left = post`. 그 뒤 항목마다 줄이고 마지막 항목을 쓰면 기록을 멈춘다(`post = 0`이면 trigger 항목에서 바로).
 - 읽는 순서: 한 바퀴 돌았으면 다음 항목 번호(`TRACE[7:4]`)가 가장 오래된 항목이다.

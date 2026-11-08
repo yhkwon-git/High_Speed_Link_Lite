@@ -42,7 +42,7 @@ set_false_path -from [get_ports rst_n]
 set_false_path -to [get_pins {u_phy/u_mis/u_rst_rdqs/sync_r*_reg/RN}]
 
 # Pre-layout: the synchronized reset (and soft_rst, which joins it) reaches
-# every flop's reset pin, about 2,700 of them. Like a clock tree, that tree is
+# every flop's reset pin, about 4,650 of them (3d596a4). Like a clock tree, it is
 # built in place and route; until then synthesis treats it as an ideal
 # network. OpenSTA 3.1 accepts this command but does not apply it, so
 # syn/sta_chip.sh buffers the tree instead (syn/fanout_buffer.py). Unbuffered,

@@ -37,7 +37,7 @@
 
 - 큐가 빌 때까지 기다리는 이유: 컨트롤러는 쓰기 큐에 남은 주소의 읽기를 큐에서 답한다(forwarding). 그러면 읽기가 링크를 거치지 않아 고장이 보이지 않는다.
 - 주소는 CA 핀으로 가므로 DQ 레인 고장이 주소를 바꾸지 않는다. 그래서 컬럼 16개를 써도 에러가 고장 레인에만 남는다(이전 bypass framer는 주소를 DQ로 보내서 한 컬럼만 썼다).
-- 뱅크 타이밍, refresh, 버스 전환은 컨트롤러가 지킨다. BIST 동안 칩은 호스트의 `req_ready`와 `rsp_valid`를 0으로 두고 응답을 모두 BIST가 받는다. 시작할 때 호스트는 조용하고 응답을 다 받았어야 하며, 루프백은 꺼져 있어야 한다.
+- 뱅크 타이밍, refresh, 버스 전환은 컨트롤러가 지킨다. BIST 동안 칩은 호스트의 `req_ready`와 `rsp_valid`를 0으로 두고 응답을 모두 BIST가 받는다. 시작할 때 호스트는 조용하고 응답을 다 받았어야 하며, 루프백은 꺼져 있어야 한다. 요청 포트가 닫혀 있으면(MISSION이 아니거나 `phy_en` = 0) start는 요청 없이 바로 done · refused로 끝난다(`LANE_BIST[21]`. MBIST `[9]`, 읽기 레벨링 `[3]`도 같음). 시험 프로그램은 done 뒤 refused를 먼저 본다.
 - DBI 핀 고장은 보이지 않는다. DBI를 끄면 송신 쪽은 0을 보내고, stuck-at-1이면 모델이 쓰기 데이터를 반전해 저장하고 읽을 때 다시 반전되어 상쇄된다. DBI와 RED 핀은 경계 스캔 방식의 핀 테스트로 봐야 하는데, 1500 포트에 아직 WBR(경계 레지스터)이 없다.
 
 ## MBIST
@@ -84,7 +84,7 @@ aggressor와 victim은 다른 워드이고, aggressor가 주소 순서로 victim
 
 ## DFD
 
-- **trace buffer**: CA 핀 명령과 이벤트를 16항목 ring에 쓰고, 고른 trigger에서 표시한 뒤 정한 수만큼 더 쓰고 멈춘다. trigger 앞 칸이 다 찬 뒤에만 trigger를 받아 앞뒤 맥락이 항상 남는다. bank 필터로 한 bank의 명령만 남겨 깊이 16을 아낀다.
+- **trace buffer**: CA 핀 명령과 이벤트를 16항목 ring에 쓰고, 고른 trigger에서 표시한 뒤 정한 수만큼 더 쓰고 멈춘다. trigger 앞 칸이 다 찬 뒤에만 trigger를 받아 앞뒤 맥락이 항상 남는다. bank 필터로 한 bank의 명령만 남겨 깊이 16을 아낀다. 이벤트는 카운터가 0이 아닌 새 값으로 바뀔 때다. clear와 MBIST 재시작은 이벤트가 아니다. trigger 원천 여섯 개(ECC 정정 불가 · 정정, PRBS, MBIST, bank 명령, 수동)를 T16이 모두 건다.
 - **카운터 · MISR**: 핀의 ACT · RD · WR · REFpb 수와 읽기 데이터 signature. 긴 시험을 값 몇 개로 비교한다(MISR은 기대 signature를 같은 함수로 계산해 비교).
 - **디버그 사례**(README DFD 절, T16): 채널 모델에 심은 refresh 간섭 버그를 ECC 정정 오류 → 첫 오류 주소 → 재현 좁히기 → bank 필터 trace로 찾았다. trace에 REFpb → ACT → RD → 정정 오류가 매번 같은 간격으로 찍혔다.
 
