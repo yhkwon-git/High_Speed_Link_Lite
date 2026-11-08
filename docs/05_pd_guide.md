@@ -16,30 +16,30 @@
 - 해제 동기는 `hsl_rst_sync`의 2플롭이 맡는다. 칩 top의 `u_rst`는 `clk`로, PHY의 `u_phy/u_mis/u_rst_rdqs`는 RDQS로 맞춘다. RDQS 쪽(캡처 플롭, 읽기 FIFO의 쓰기 쪽)은 RDQS가 돌기 전에는 리셋에 머문다. 이 동기화기는 RDQS가 계속 돈다는 채널 모델의 가정에 기댄다. 실제 RDQS는 읽기 버스트 동안만 토글하므로, 실제 PHY에서는 해제를 `clk` 쪽에서 맞추고 DQS gating으로 캡처를 여는 구조가 필요하다.
 - 나머지 제어 플롭은 `rst_logic_n`(RDQS 쪽은 `rst_rdqs_n`)을 비동기 리셋으로 쓴다. 큐와 FIFO의 데이터 배열은 리셋이 없고, 유효성은 리셋되는 포인터가 정한다. 래치는 없다.
 - SDC의 `set_false_path -from rst_n`은 v0.1 단순화다. 실제 덱에서는 싱크러나이저 플롭의 recovery/removal을 이 false path가 가리지 않는지 확인한다. RDQS 동기화기는 두 플롭의 리셋 핀으로 가는 assert 경로만 false path로 두고, 풀린 리셋은 RDQS 기준 recovery(+0.499 ns) · removal을 본다.
-- 동기화된 리셋은 플롭 약 4,650개의 리셋 핀으로 간다(`3d596a4`: FF 4,846개 중 리셋 없는 것은 읽기 FIFO 데이터 192개와 클럭 게이트 enable 1개). 클럭 트리처럼 P&R에서 트리를 만든다고 보고 SDC는 `set_ideal_network`를 둔다. OpenSTA 3.1은 이 명령을 적용하지 않아, 저장소의 STA는 `syn/fanout_buffer.py`로 버퍼 트리(부하 16개마다, 블록마다 리셋 버퍼 하나)를 넣어 본다. 버퍼가 없으면 게이트 하나가 모든 리셋 핀을 구동해 지연이 22.7 ns로 외삽된다(`8af801b`, 리셋 핀 약 2,700개일 때).
-- 이상 클럭에서 리셋 핀의 removal이 음수다(`3d596a4`): RDQS 쪽 85개가 −0.048 ns, `rst_sync_n` 쪽 334개(CSR 164 · 1500 포트 170)가 −0.017 ns(`8af801b`에서는 −0.038 ns). 리셋 해제가 removal 시간 0.23 ns보다 조금 일찍 닿는 것이라 CTS 뒤 hold 수리 단계에서 다시 본다.
+- 동기화된 리셋은 플롭 약 4,650개의 리셋 핀으로 간다(`e61e90d`: FF 4,846개 중 리셋 없는 것은 읽기 FIFO 데이터 192개와 클럭 게이트 enable 1개). 클럭 트리처럼 P&R에서 트리를 만든다고 보고 SDC는 `set_ideal_network`를 둔다. OpenSTA 3.1은 이 명령을 적용하지 않아, 저장소의 STA는 `syn/fanout_buffer.py`로 버퍼 트리(부하 16개마다, 블록마다 리셋 버퍼 하나)를 넣어 본다. 버퍼가 없으면 게이트 하나가 모든 리셋 핀을 구동해 지연이 22.7 ns로 외삽된다(`8af801b`, 리셋 핀 약 2,700개일 때).
+- 이상 클럭에서 리셋 핀의 removal이 음수다(`e61e90d`, `3d596a4`와 같음): RDQS 쪽 85개가 −0.048 ns, `rst_sync_n` 쪽 334개(CSR 164 · 1500 포트 170)가 −0.017 ns(`8af801b`에서는 −0.038 ns). 리셋 해제가 removal 시간 0.23 ns보다 조금 일찍 닿는 것이라 CTS 뒤 hold 수리 단계에서 다시 본다.
 
 ## CDC
 
 칩의 읽기 FIFO(`u_phy/u_mis/u_rx_fifo`)는 쓰기 클럭이 RDQS, 읽기 클럭이 `clk`다. TX 기어의 `clk` → `clk_phy`는 같은 PLL에서 나온 동기 경로라 FIFO가 없고, 반 주기(0.625 ns) 경로로 타이밍을 본다. deskew는 아직 경로에 없다. `hsl_phy_clk`는 `SYNTHESIS`가 정의되면 빈 쉘이다. PLL 매크로가 그 자리를 채운다.
 
 - 포인터는 각 도메인의 그레이 코드 플롭(`wgray`, `rgray`)에서 나간다. 바이너리 플롭의 XOR를 그대로 넘기면 여러 비트가 바뀌는 순간 글리치가 생기고, 첫 싱크 플롭이 옛 값도 새 값도 아닌 포인터를 잡을 수 있다.
-- 크로싱은 `wgray`(RDQS) → `wptr_g_s1`(`clk`)과 `rgray`(`clk`) → `rptr_g_s1`(RDQS) 두 개다. 둘 다 빠른 쪽 주기인 `set_max_delay 0.625`로 묶는다. 한 그레이 스텝의 비트들이 한 주기 안에 도착하게 하려는 것이다. FIFO 데이터 → `clk`는 포인터가 싱크 두 단을 지난 뒤에 읽히므로 `set_max_delay 1.25`다.
+- 크로싱은 `wgray`(RDQS) → `wptr_g_s1`(`clk`)과 `rgray`(`clk`) → `rptr_g_s1`(RDQS) 두 개다. 둘 다 빠른 쪽 주기인 `set_max_delay 0.625`로 묶는다. 제약은 소스 클럭 → 첫 싱크 플롭으로 건다: Gray 최상위 비트는 binary 최상위 비트와 같아 합성이 두 플롭을 하나로 합치므로, 소스 셀 이름(`wgray*`)으로 묶으면 그 비트가 빠진다(14fec6e부터 `e61e90d` 전까지 그랬다). 한 그레이 스텝의 비트들이 한 주기 안에 도착하게 하려는 것이다. FIFO 데이터 → `clk`는 포인터가 싱크 두 단을 지난 뒤에 읽히므로 `set_max_delay 1.25`다.
 - RDQS와 다른 클럭 사이에 비동기 clock group을 걸지 않는다. clock group은 false path처럼 동작해 위 `set_max_delay`보다 우선한다.
 - `*_s1` → `*_s2`는 한 클럭 안의 경로라 예외를 두지 않는다.
 - 포인터 경로를 `set_false_path`로 묶지 않는다. false path는 그 경로의 지연을 타이밍이 보지 않게 만든다.
 
 ## STA 결과
 
-`bash syn/sta_chip.sh` (commit `3d596a4`, Nangate45 typical, 이상 클럭, 배선 없음):
+`bash syn/sta_chip.sh` (commit `e61e90d`, Nangate45 typical, 이상 클럭, 배선 없음):
 
 | 클럭 · 검사 | 결과 |
 | --- | --- |
 | `clk_phy` 1.6 GHz | slack +0.044 ns (ECC 인코더: 원시 워드 레지스터 → TX 기어, 반 주기) |
 | `rdqs` | slack +0.106 ns (입력 지연 0.25 ns 포함) |
-| 읽기 FIFO 크로싱 | Gray 포인터 0.104 / 0.625 ns, 데이터 0.402 / 1.25 ns |
+| 읽기 FIFO 크로싱 | Gray 포인터 세 비트 최대 0.112 / 0.625 ns, 데이터 0.402 / 1.25 ns |
 | `clk` 800 MHz, HSL 로직 | 통과 |
-| `clk` 800 MHz, 컨트롤러 | −0.933 ns, 최소 주기 2.18 ns (458 MHz), 실패 끝점 1,971개 |
+| `clk` 800 MHz, 컨트롤러 | −0.930 ns, 최소 주기 2.18 ns (459 MHz), 실패 끝점 1,971개 |
 | RDQS 리셋 recovery | +0.499 ns (`u_rst_rdqs` → 캡처 플롭) |
 | hold · removal | −0.048 ns RDQS 쪽 리셋 핀, −0.017 ns `rst_sync_n` 쪽(CSR · 1500 포트) 리셋 핀 (CTS 뒤 수리) |
 
@@ -74,7 +74,7 @@ PD가 맞춰야 하는 의도:
 배치 의도만 적으면:
 
 - PHY 핀 로직은 채널 범프 쪽에 둔다.
-- CSR, FSM, 컨트롤러는 그 안쪽에 둔다. 컨트롤러는 칩 면적의 44%다(Nangate45, `3d596a4`. DFT · DFD를 더하기 전 `8af801b`에서는 73%).
+- CSR, FSM, 컨트롤러는 그 안쪽에 둔다. 컨트롤러는 칩 면적의 44%다(Nangate45, `e61e90d`. DFT · DFD를 더하기 전 `8af801b`에서는 73%).
 - ECC 핀(`pin_tx_ecc`, `pin_rx_ecc`)은 데이터 핀과 같은 바이트 그룹, 같은 스트로브로 묶는다. RDQS 캡처 플롭과 읽기 FIFO의 쓰기 쪽은 RDQS 핀 가까이 둔다.
 - fuse 포트(`fz_*`)는 fuse(OTP) 매크로 옆에 둔다. 읽기 데이터는 입력 지연 0.5 ns를 가정하고 칩 안에서 레지스터로 먼저 받는다.
 - repair 표(`rep_tab`)는 배열의 spare 쪽으로 가는 사이드밴드다. `hsl_repair`는 그 출력이 나가는 쪽(core die로 가는 TSV 영역)과 fuse 매크로 사이에 둔다.

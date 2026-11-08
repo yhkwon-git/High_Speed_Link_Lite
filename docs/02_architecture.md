@@ -47,7 +47,7 @@ beats_per_burst = BL / DDR_BITS = 2
 
 E7 이후 시뮬레이션과 SDC는 이 식과 같다. 컨트롤러 반주기는 625 ps, PHY 반주기는 312.5 ps다. 패키지 상수, 테스트벤치, `hsl_phy_clk`, SDC의 대조는 `docs/e12_clocks.md`다. 이 숫자를 JEDEC 핀 속도로 말하지 않는다.
 
-칩 STA(`3d596a4`, Nangate45 typical, 이상 클럭)에서 HSL 로직은 800 MHz, 1.6 GHz, RDQS를 모두 통과한다. 컨트롤러는 2.18 ns(458 MHz)에서 닫힌다(`8af801b`에서는 2.14 ns, 같은 RTL의 ABC 실행 간 차이). 한 클럭에 명령을 고르고 모든 타이머를 갱신하는 루프가 그 경로다. 이 라이브러리에서 800 MHz 명령률을 지키려면 DFI 1 : 2(컨트롤러 400 MHz, 클럭마다 명령 슬롯 두 개)가 맞는 방향이다. 자세한 경로와 선택지는 README의 STA 절과 `docs/05_pd_guide.md`에 있다.
+칩 STA(`e61e90d`, Nangate45 typical, 이상 클럭)에서 HSL 로직은 800 MHz, 1.6 GHz, RDQS를 모두 통과한다. 컨트롤러는 2.18 ns(459 MHz)에서 닫힌다(`8af801b`에서는 2.14 ns, 같은 RTL의 ABC 실행 간 차이). 한 클럭에 명령을 고르고 모든 타이머를 갱신하는 루프가 그 경로다. 이 라이브러리에서 800 MHz 명령률을 지키려면 DFI 1 : 2(컨트롤러 400 MHz, 클럭마다 명령 슬롯 두 개)가 맞는 방향이다. 자세한 경로와 선택지는 README의 STA 절과 `docs/05_pd_guide.md`에 있다.
 
 ## 메모리 컨트롤러
 
