@@ -16,8 +16,10 @@
 // and read data back on rddata_valid with whatever latency the PHY has.
 //
 // Live: CSR, training FSM, reset tree, controller, PHY (DBI, lane repair, CA
-// pins, TX gear with WDQS, RDQS capture, Gray FIFO), lane BIST, read
-// leveling, PRBS compare. Tied off in the chip: deskew (block test only).
+// pins, TX gear with WDQS, RDQS capture, Gray FIFO, SECDED ECC), lane BIST,
+// read leveling, PRBS compare, MBIST, BIRA / repair table / fuses, DFD
+// (trace, counters, MISR), IEEE 1500-style test port. Tied off in the chip:
+// deskew (block test only).
 //
 // The request port is open in mission mode with the PHY on (CTRL.phy_en):
 // only then do commands reach the pins, and a read sent with the PHY off

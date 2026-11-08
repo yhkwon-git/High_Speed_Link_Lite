@@ -8,7 +8,7 @@ package hsl_pkg;
   import dram_pkg::*;
 
   localparam logic [31:0] HSL_ID      = 32'h4853_4C31; // ASCII "HSL1"
-  localparam logic [31:0] HSL_VERSION = 32'h0000_0300; // v0.3.0: MDC v4 + mission PHY
+  localparam logic [31:0] HSL_VERSION = 32'h0000_0400; // v0.4.0: + MBIST, repair, ECC, DFD, 1500 port
 
   // Sim/SDC periods after E7. See docs/02_architecture.md and docs/e12_clocks.md.
   // Controller 800 MHz, PHY/CK 1.6 GHz, ratio 2.

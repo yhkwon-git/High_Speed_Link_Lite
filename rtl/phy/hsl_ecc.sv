@@ -12,7 +12,7 @@
 //       its host address (from the PHY's RD tracking), syndrome and type until
 //       clear. Without en the raw word goes on and nothing is counted.
 //   Self-test: st_start runs 78 codewords through the same decoder (the
-//       datapath one, through a mux): a fixed word with no error, each of the
+//       datapath one): a fixed word with no error, each of the
 //       39 single-bit errors, and the 38 adjacent double-bit errors, and
 //       checks the corrected data and the ce / ue flags. Three stages: the
 //       codeword is loaded into the PHY's read return registers (the
