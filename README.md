@@ -25,7 +25,7 @@ SK hynix HBM Digital Design (RTL Design) 지원 · 권용현
 | RTL 35개 모듈<br>4,611줄 (주석 제외) | SMOKE · T1–T17<br>E7 · E9 · E11 | Toggle 78.8% | Nangate45<br>배선 없음 | 800 MHz · 1.6 GHz<br>RDQS · CDC |
 
 > [!NOTE]
-> 표와 아래 결과는 commit `14fec6e` 기준이다(Verilator 5.052, ModelSim-Altera 10.1d 모두 23/23 PASS). `0193c04`에서 메모리 컨트롤러를 [Mini DRAM Controller](https://github.com/yhkwon-git/mini-dram-controller) v4로 바꿔 PHY와 DFI 형태로 붙이고 저속 bypass framer를 없앴으며, `8af801b`에서 칩 STA(세 클럭과 CDC)를 더하고 STA가 짚은 HSL 경로를 고쳤으며, `f018966`에서 DRAM 배열의 March MBIST를, `6c29d60`에서 그 실패 로그로 spare를 고르는 BIRA와 fuse repair를, `ffc073d`에서 ECC 핀 두 개에 실은 데이터 SECDED를, `796d969`에서 trace buffer · 명령 카운터 · MISR(DFD)과 디버그 사례를, `14fec6e`에서 CSR 전체에 닿는 IEEE 1500 방식 시험 포트를 더했다. 절마다 적은 commit은 그 숫자를 잰 commit이다. PDF의 3–20쪽은 `4feb39f` 측정, 21–22쪽은 리뷰 수정과 DBI-AC, 23–28쪽은 MBIST · repair · ECC · DFD · 1500 포트와 STA(쪽마다 측정 commit)다. 레인 리페어, 읽기 레벨링, mission 데이터패스, 컨트롤러 교체는 아직 이 README에만 있다.
+> 표와 아래 결과는 commit `14fec6e` 기준이다(Verilator 5.052, ModelSim-Altera 10.1d 모두 23/23 PASS). `0193c04`에서 메모리 컨트롤러를 [Mini DRAM Controller](https://github.com/yhkwon-git/mini-dram-controller) v4로 바꿔 PHY와 DFI 형태로 붙이고 저속 bypass framer를 없앴으며, `8af801b`에서 칩 STA(세 클럭과 CDC)를 더하고 STA가 짚은 HSL 경로를 고쳤으며, `f018966`에서 DRAM 배열의 March MBIST를, `6c29d60`에서 그 실패 로그로 spare를 고르는 BIRA와 fuse repair를, `ffc073d`에서 ECC 핀 두 개에 실은 데이터 SECDED를, `796d969`에서 trace buffer · 명령 카운터 · MISR(DFD)과 디버그 사례를, `14fec6e`에서 CSR 전체에 닿는 IEEE 1500 방식 시험 포트를 더했다. 절마다 적은 commit은 그 숫자를 잰 commit이다. PDF는 2–20쪽과 23–28쪽이 이 칩(`14fec6e`)을 담고 쪽마다 측정 commit을 적었으며, 21–22쪽은 DBI-AC와 리뷰 수정의 당시 기록이다.
 
 ## 개요
 
@@ -716,7 +716,7 @@ STA가 짚어 RTL을 고친 HSL 경로(모두 800 MHz에서 통과로 바뀜):
 
 ## 이슈 기록
 
-실습 중에 고친 문제와 재검증(실행, 합성, 코드 리뷰)에서 나온 문제다. A–E의 원인과 파형 근거는 PDF 19쪽에 있다.
+실습 중에 고친 문제와 재검증(실행, 합성, 코드 리뷰)에서 나온 문제다. 이 표는 PDF 17쪽에도 있다.
 
 | ID | 증상 | 원인 | 조치 |
 | --- | --- | --- | --- |
@@ -791,7 +791,7 @@ syn/             filelist.f, constraints/hsl_base_die_lite.sdc, ppa_block.sh (�
                  sta_chip.sh · sta_chip.tcl (칩 STA), fanout_buffer.py, area_by_block.py,
                  lib/hsl_phy_clk_stub.lib (PLL 타이밍 스텁)
 docs/            스펙부터 PD 가이드까지 설계 문서, 실습 기록, images/
-portfolio-deck/  포트폴리오 PDF, PPTX (631d3bd 판: 3–20쪽 4feb39f, 21–22쪽 DBI-AC와 리뷰 수정)
+portfolio-deck/  포트폴리오 PDF, PPTX (29쪽, 14fec6e 측정)
 ```
 
 ## 문서
