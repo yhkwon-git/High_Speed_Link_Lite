@@ -25,7 +25,7 @@ SK hynix HBM Digital Design (RTL Design) 지원 · 권용현
 | RTL 35개 모듈<br>4,676줄 (주석 제외) | SMOKE · T1–T17<br>E7 · E9 · E11 | Toggle 80.2% | Nangate45<br>배선 없음 | 800 MHz · 1.6 GHz<br>RDQS · CDC |
 
 > [!NOTE]
-> 표와 아래 결과는 commit `e61e90d` 기준이다(Verilator 5.052, ModelSim-Altera 10.1d 모두 23/23 PASS). `0193c04`에서 메모리 컨트롤러를 [Mini DRAM Controller](https://github.com/yhkwon-git/mini-dram-controller) v4로 바꿔 PHY와 DFI 형태로 붙이고 저속 bypass framer를 없앴으며, `8af801b`에서 칩 STA(세 클럭과 CDC)를 더하고 STA가 짚은 HSL 경로를 고쳤으며, `f018966`에서 DRAM 배열의 March MBIST를, `6c29d60`에서 그 실패 로그로 spare를 고르는 BIRA와 fuse repair를, `ffc073d`에서 ECC 핀 두 개에 실은 데이터 SECDED를, `796d969`에서 trace buffer · 명령 카운터 · MISR(DFD)과 디버그 사례를, `14fec6e`에서 CSR 전체에 닿는 IEEE 1500 방식 시험 포트를 더했고, `3d596a4`에서 리뷰가 짚은 세 가지(DFD가 카운터 clear를 이벤트로 보던 것, RDQS 쪽 리셋 해제의 동기화, 요청 포트가 닫힌 채 시작한 시험 엔진)를, `e61e90d`에서 재검토가 짚은 네 가지(다른 엔진 뒤에서 기다리는 start의 CSR 표시, Gray 포인터 최상위 비트의 CDC 제약, MBIST 첫 실패 기록의 초기화, 거절된 읽기 레벨링의 결과 보존)를 고쳤다. 절마다 적은 commit은 그 숫자를 잰 commit이다. PDF는 2–20쪽과 23–28쪽이 이 칩(`3d596a4`)을 담고 쪽마다 측정 commit을 적었으며, 21–22쪽은 DBI-AC와 리뷰 수정의 당시 기록이다.
+> 표와 아래 결과는 commit `e61e90d` 기준이다(Verilator 5.052, ModelSim-Altera 10.1d 모두 23/23 PASS). `0193c04`에서 메모리 컨트롤러를 [Mini DRAM Controller](https://github.com/yhkwon-git/mini-dram-controller) v4로 바꿔 PHY와 DFI 형태로 붙이고 저속 bypass framer를 없앴으며, `8af801b`에서 칩 STA(세 클럭과 CDC)를 더하고 STA가 짚은 HSL 경로를 고쳤으며, `f018966`에서 DRAM 배열의 March MBIST를, `6c29d60`에서 그 실패 로그로 spare를 고르는 BIRA와 fuse repair를, `ffc073d`에서 ECC 핀 두 개에 실은 데이터 SECDED를, `796d969`에서 trace buffer · 명령 카운터 · MISR(DFD)과 디버그 사례를, `14fec6e`에서 CSR 전체에 닿는 IEEE 1500 방식 시험 포트를 더했고, `3d596a4`에서 리뷰가 짚은 세 가지(DFD가 카운터 clear를 이벤트로 보던 것, RDQS 쪽 리셋 해제의 동기화, 요청 포트가 닫힌 채 시작한 시험 엔진)를, `e61e90d`에서 재검토가 짚은 네 가지(다른 엔진 뒤에서 기다리는 start의 CSR 표시, Gray 포인터 최상위 비트의 CDC 제약, MBIST 첫 실패 기록의 초기화, 거절된 읽기 레벨링의 결과 보존)를 고쳤다. 절마다 적은 commit은 그 숫자를 잰 commit이다. PDF는 2–20쪽과 23–28쪽이 이 칩(`e61e90d`)을 담고 쪽마다 측정 commit을 적었으며, 21–22쪽은 DBI-AC와 리뷰 수정의 당시 기록이다.
 
 ## 개요
 
@@ -811,7 +811,7 @@ syn/             filelist.f, constraints/hsl_base_die_lite.sdc, ppa_block.sh (�
                  sta_chip.sh · sta_chip.tcl (칩 STA), fanout_buffer.py, area_by_block.py,
                  lib/hsl_phy_clk_stub.lib (PLL 타이밍 스텁)
 docs/            스펙부터 PD 가이드까지 설계 문서, 실습 기록, images/
-portfolio-deck/  포트폴리오 PDF, PPTX (29쪽, 3d596a4 측정)
+portfolio-deck/  포트폴리오 PDF, PPTX (29쪽, e61e90d 측정)
 ```
 
 ## 문서
