@@ -106,7 +106,7 @@ aggressor와 victim은 다른 워드이고, aggressor가 주소 순서로 victim
 합격 조건, bin, 시험 시간까지 넣은 전체 흐름은 [`08_test_flow.md`](08_test_flow.md)에 있다.
 
 1. 리셋 해제 후 ID를 읽어 접근을 확인한다.
-2. 병렬 루프백과 PRBS로 디지털 데이터패스를 본다.
+2. 병렬 루프백과 PRBS로 PRBS 생성기, payload 먹스, 비교기, `ERRCNT` 경로를 본다(DBI, 레인 리페어, TX 기어, 핀은 이 비교 밖이고 3의 레인 BIST가 본다).
 3. `CSR_LANE_BIST`로 레인 BIST를 돌린다. 한 레인만 실패했으면 그 번호를 `CSR_REMAP`에 쓰고 DRAM 쪽에도 같은 설정을 한 뒤 다시 돌려 PASS를 확인한다.
 4. 그다음 채널 트레이닝을 진행한다.
 5. 링크가 통과한 뒤 `CSR_MBIST`로 배열 영역마다 March C-를 돌리고, 실패하면 `CSR_MBIST_LOG`로 실패 워드를 읽는다.

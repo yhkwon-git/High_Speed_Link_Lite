@@ -7,8 +7,8 @@
 | # | 단계 | 하는 일 (CSR) | 합격 조건 | 실패하면 | 확인 |
 | ---: | --- | --- | --- | --- | --- |
 | 0 | 전원 · 리셋 | 리셋이 풀리면 fuse 워드 4개가 SECDED 디코더를 지나 repair 표로 자동 로드된다 | `FUSE`: 로드 끝, 정정 불가 0 | 정정 불가가 있으면 그 항목은 버려진다 → fuse bin | T14 B · C |
-| 1 | 접근 | 1500 ID 레지스터, `ID` · `VERSION` CSR | `HSL1`, `0x300` | 접근 불가 bin | T17, SMOKE |
-| 2 | 디지털 데이터패스 | `CTRL`의 `prbs_en` · `loopback`으로 PRBS7 병렬 루프백, `ERRCNT` | 에러 0 | 로직 bin | T8 |
+| 1 | 접근 | 1500 ID 레지스터, `ID` · `VERSION` CSR | `HSL1`, `0x400` | 접근 불가 bin | T17, SMOKE |
+| 2 | PRBS 비교 회로 | `CTRL`의 `prbs_en` · `loopback`: 루프백이면 비교가 맞고, 끄면 `ERRCNT`가 오름 | 두 경우 모두 기대대로 | 로직 bin | T8 |
 | 3 | 링크 핀 | `LANE_BIST`로 DQ 레인 검사. 한 레인만 실패하면 `REMAP`과 DRAM 쪽 설정 후 재검사 | 재검사 PASS | 두 레인 이상 → 링크 bin | T10 |
 | 4 | 읽기 레벨링 | `RDTRAIN`: 레인별 지연선 코드 스윕, eye 중앙 | 모든 레인 eye 폭 2 코드 이상 | eye 없음 → 링크 bin | T11 |
 | 5 | ECC 디코더 | `ECC[2]` self-test, 1 bit · 2 bit 주입으로 카운터와 로그 확인 | self-test 78개 PASS, 정정 · 정정 불가가 주입대로 | 로직 bin | T15 |
@@ -17,6 +17,7 @@
 | 8 | hard repair 확인 | 칩 리셋 → fuse 로드 결과 → 재시험 | 로드 끝, 정정 · 버린 항목 0, 재시험 PASS | fuse bin | T14 B |
 | 9 | mission | ECC on, 호스트 트래픽, `EVCNT` · `MISR`로 결과를 값 몇 개로 비교 | 기대 signature, 정정 불가 0 | 9 실패는 FA로 | T12, T16 A |
 
+- 2가 보는 범위: PRBS 생성기, payload 먹스, 비교기, `ERRCNT`다. 병렬 루프백은 DBI 앞에서 되돌리므로 DBI, 레인 shift, TX 기어, 핀은 이 비교에 들어가지 않는다. 그 경로와 핀은 3의 레인 BIST가 채널 모델까지 돌아 확인한다.
 - 6에서 ECC를 끄는 이유: 켜면 1 bit 배열 고장이 정정되어 보이지 않는다(T15의 stuck bit). 배열 시험은 원시 데이터로 한다.
 - 3이 6보다 먼저인 이유: 링크 고장도 MBIST에 실패로 보인다(DQ 핀 stuck-at-1이면 모든 r0 실패, T13). 링크를 먼저 고쳐야 배열 고장과 구분된다.
 - 7의 BIRA는 MBIST 실패 워드 로그(16개)를 읽는다. 한 블록에 실패 워드가 16개를 넘으면 수리 불가로 본다.
