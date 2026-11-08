@@ -175,7 +175,7 @@ TRAIN 쓰기는 `[0]` start, `[1]` zq_done, `[2]` wrlvl_done, `[3]` rdlvl_done, 
 
 PHY는 컨트롤러의 행 · 열 명령을 한 클럭 레지스터로 받아 그대로 낸다(`phy_en`이 0이면 NOP). 쓰기 데이터는 컨트롤러가 WR 뒤 WL(1) 클럭에 `wrdata_en`과 함께 낸다. PHY는 그 워드를 DBI → 레인 shift(4 심볼) → 레지스터에 넣고, TX 기어(`hsl_tx_gear`)가 반 주기 뒤의 PHY 엣지(E1)에서 받아 하위 beat를, 다음 E0에서 상위 beat를 낸다. E1은 컨트롤러 클럭 토글을 PHY 클럭으로 이전 값과 비교해 찾는다. 그래서 첫 beat는 WR이 핀에 나온 뒤 1.5 컨트롤러 클럭(CK 3주기)에 나간다.
 
-읽기는 RDQS 상승 엣지에서 beat 두 개를 모아 깊이 4 Gray FIFO(40 bit)에 쓰고, 컨트롤러 클럭에서 꺼내 shift와 DBI를 푼 뒤 `rddata_valid`로 컨트롤러에 넘긴다. 핀의 RD부터 `rddata_valid`까지 7 클럭이다(T12, 아래 ECC의 읽기 레지스터 단 포함). 지연을 고정하지 않으므로 컨트롤러는 `rddata_valid`로 진행 중인 RD를 센다.
+읽기는 RDQS 상승 엣지에서 beat 두 개를 모아 깊이 4 Gray FIFO(데이터 40 + ECC 8 = 48 bit)에 쓰고, 컨트롤러 클럭에서 꺼내 shift와 DBI를 푼 뒤 `rddata_valid`로 컨트롤러에 넘긴다. 핀의 RD부터 `rddata_valid`까지 7 클럭이다(T12, 아래 ECC의 읽기 레지스터 단 포함). 지연을 고정하지 않으므로 컨트롤러는 `rddata_valid`로 진행 중인 RD를 센다.
 
 채널 모델은 CA를 컨트롤러 클럭의 negedge에서, 쓰기 beat를 beat 가운데(`pin_ck` negedge)에서 샘플한다. 쓰기 버스트는 WR이 들어온 순서대로, WR 때 열려 있던 row에 저장한다. 읽기 beat는 RD 뒤 `RL_RDQS` = 3 RDQS 주기에 RDQS 하강 엣지에서 낸다.
 
