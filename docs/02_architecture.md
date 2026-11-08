@@ -77,7 +77,7 @@ DBI와 ECC는 한 UI의 바이트를 한 덩어리로 본다. 레인 단위로 �
 ## 리셋
 
 - 핀 `rst_n`은 비동기 assert, `hsl_rst_sync`가 2플롭으로 deassert를 맞춘다.
-- RDQS 쪽 플롭(캡처 플롭, 읽기 FIFO의 쓰기 쪽)은 PHY 안의 두 번째 `hsl_rst_sync`(`u_rst_rdqs`)가 RDQS로 해제를 맞춘다. RDQS가 돌지 않는 동안(PHY off) 그쪽은 리셋에 머문다. FIFO의 읽기 쪽은 `clk`의 리셋을 쓴다.
+- RDQS 쪽 플롭(캡처 플롭, 읽기 FIFO의 쓰기 쪽)은 PHY 안의 두 번째 `hsl_rst_sync`(`u_rst_rdqs`)가 RDQS로 해제를 맞춘다. RDQS가 돌지 않는 동안(PHY off) 그쪽은 리셋에 머문다. 채널 모델의 RDQS가 계속 돈다는 가정에 기대며, 실제 RDQS(읽기 동안만 토글)에서는 해제를 `clk` 쪽에서 맞추고 DQS gating을 두어야 한다. FIFO의 읽기 쪽은 `clk`의 리셋을 쓴다.
 - CSR은 동기화된 리셋만 본다.
 - `soft_rst`는 CSR 바깥의 데이터패스만 리셋한다. CSR까지 리셋하면 비트가 스스로 지워져 리셋을 유지할 수 없다.
 

@@ -13,11 +13,11 @@
 ## 리셋
 
 - `rst_n`은 비동기 assert다.
-- 해제 동기는 `hsl_rst_sync`의 2플롭이 맡는다. 칩 top의 `u_rst`는 `clk`로, PHY의 `u_phy/u_mis/u_rst_rdqs`는 RDQS로 맞춘다. RDQS 쪽(캡처 플롭, 읽기 FIFO의 쓰기 쪽)은 RDQS가 돌기 전에는 리셋에 머문다.
+- 해제 동기는 `hsl_rst_sync`의 2플롭이 맡는다. 칩 top의 `u_rst`는 `clk`로, PHY의 `u_phy/u_mis/u_rst_rdqs`는 RDQS로 맞춘다. RDQS 쪽(캡처 플롭, 읽기 FIFO의 쓰기 쪽)은 RDQS가 돌기 전에는 리셋에 머문다. 이 동기화기는 RDQS가 계속 돈다는 채널 모델의 가정에 기댄다. 실제 RDQS는 읽기 버스트 동안만 토글하므로, 실제 PHY에서는 해제를 `clk` 쪽에서 맞추고 DQS gating으로 캡처를 여는 구조가 필요하다.
 - 나머지 제어 플롭은 `rst_logic_n`(RDQS 쪽은 `rst_rdqs_n`)을 비동기 리셋으로 쓴다. 큐와 FIFO의 데이터 배열은 리셋이 없고, 유효성은 리셋되는 포인터가 정한다. 래치는 없다.
 - SDC의 `set_false_path -from rst_n`은 v0.1 단순화다. 실제 덱에서는 싱크러나이저 플롭의 recovery/removal을 이 false path가 가리지 않는지 확인한다. RDQS 동기화기는 두 플롭의 리셋 핀으로 가는 assert 경로만 false path로 두고, 풀린 리셋은 RDQS 기준 recovery(+0.499 ns) · removal을 본다.
 - 동기화된 리셋은 플롭 약 4,650개의 리셋 핀으로 간다(`3d596a4`: FF 4,846개 중 리셋 없는 것은 읽기 FIFO 데이터 192개와 클럭 게이트 enable 1개). 클럭 트리처럼 P&R에서 트리를 만든다고 보고 SDC는 `set_ideal_network`를 둔다. OpenSTA 3.1은 이 명령을 적용하지 않아, 저장소의 STA는 `syn/fanout_buffer.py`로 버퍼 트리(부하 16개마다, 블록마다 리셋 버퍼 하나)를 넣어 본다. 버퍼가 없으면 게이트 하나가 모든 리셋 핀을 구동해 지연이 22.7 ns로 외삽된다(`8af801b`, 리셋 핀 약 2,700개일 때).
-- 이상 클럭에서 리셋 핀의 removal이 음수다(`3d596a4`): RDQS 쪽 85개가 −0.048 ns, CSR 334개가 −0.017 ns(`8af801b`에서는 −0.038 ns). 리셋 해제가 removal 시간 0.23 ns보다 조금 일찍 닿는 것이라 CTS 뒤 hold 수리 단계에서 다시 본다.
+- 이상 클럭에서 리셋 핀의 removal이 음수다(`3d596a4`): RDQS 쪽 85개가 −0.048 ns, `rst_sync_n` 쪽 334개(CSR 164 · 1500 포트 170)가 −0.017 ns(`8af801b`에서는 −0.038 ns). 리셋 해제가 removal 시간 0.23 ns보다 조금 일찍 닿는 것이라 CTS 뒤 hold 수리 단계에서 다시 본다.
 
 ## CDC
 
@@ -41,7 +41,7 @@
 | `clk` 800 MHz, HSL 로직 | 통과 |
 | `clk` 800 MHz, 컨트롤러 | −0.933 ns, 최소 주기 2.18 ns (458 MHz), 실패 끝점 1,971개 |
 | RDQS 리셋 recovery | +0.499 ns (`u_rst_rdqs` → 캡처 플롭) |
-| hold · removal | −0.048 ns RDQS 쪽 리셋 핀, −0.017 ns CSR 리셋 핀 (CTS 뒤 수리) |
+| hold · removal | −0.048 ns RDQS 쪽 리셋 핀, −0.017 ns `rst_sync_n` 쪽(CSR · 1500 포트) 리셋 핀 (CTS 뒤 수리) |
 
 - 준정적 설정: CTRL · REMAP 설정 → TX 워드 레지스터 데이터 핀은 2클럭 multicycle이다. 설정은 컨트롤러가 idle일 때만 바뀐다. 리셋 핀은 이 예외에 들어가지 않는다.
 - 컨트롤러의 임계 경로는 큐 엔트리 → 스케줄러 후보 · FR-FCFS 선택 → 뱅크 타이머 갱신의 한 클럭 루프다. 호스트 입력 → `req_ready`는 컨트롤러 안에서 조합으로 이어지는 feedthrough다.

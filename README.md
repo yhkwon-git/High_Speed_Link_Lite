@@ -139,7 +139,7 @@ hsl_deskew                레인별 0–4 tap (블록 테스트만)
 | PHY 읽기 경로는 지연을 고정하지 않고 `rddata_valid`로 알림 | RDQS 캡처와 Gray FIFO 동기화의 지연은 RDQS 위상에 따라 한 클럭쯤 달라진다. 컨트롤러가 `rddata_valid`로 진행 중인 RD를 세므로 순서만 지키면 된다 | 실제 DFI의 `tphy_rdlat` 같은 고정 지연 계약은 없다. 컨트롤러의 읽기 반환 FIFO는 PHY 왕복만큼 깊어야 한다 |
 | Beat-major 데이터 배치 | DBI와 ECC가 한 UI의 바이트를 한 덩어리로 다룬다 | 레인 단위 접근은 비트를 흩어 읽는다 |
 | CSR은 `rst_sync_n`만, 데이터패스는 `rst_sync_n & ~soft_rst` | CSR까지 soft reset에 넣으면 `soft_rst` 비트가 다음 사이클에 스스로 지워진다 | 리셋 도메인이 둘이 된다 |
-| RDQS 도메인 플롭은 RDQS로 해제를 맞춘 자기 리셋 동기화기(`u_rst_rdqs`)를 쓰고, 읽기 FIFO의 쓰기 · 읽기 쪽 리셋을 나눔 | 리셋은 비동기로 걸어도 되지만 해제는 그 플롭의 클럭에 맞아야 recovery · removal을 지킨다. 컨트롤러 클럭에서 맞춘 해제는 RDQS와 위상 관계가 없다 | RDQS가 돌기 전(PHY off)에는 그쪽이 리셋에 머문다(T12가 확인). 이상 클럭 STA에서 그 리셋 핀의 removal이 −0.048 ns다(CTS 뒤 hold 수리 대상) |
+| RDQS 도메인 플롭은 RDQS로 해제를 맞춘 자기 리셋 동기화기(`u_rst_rdqs`)를 쓰고, 읽기 FIFO의 쓰기 · 읽기 쪽 리셋을 나눔 | 리셋은 비동기로 걸어도 되지만 해제는 그 플롭의 클럭에 맞아야 recovery · removal을 지킨다. 컨트롤러 클럭에서 맞춘 해제는 RDQS와 위상 관계가 없다 | RDQS가 돌기 전(PHY off)에는 그쪽이 리셋에 머문다(T12가 확인). 이상 클럭 STA에서 그 리셋 핀의 removal이 −0.048 ns다(CTS 뒤 hold 수리 대상). 채널 모델의 RDQS가 계속 돈다는 가정에 기댄다: 실제 RDQS는 읽기 버스트 동안만 토글하므로, 실제 PHY라면 해제를 `clk` 쪽에서 맞추고 DQS gating이 캡처를 여는 구조가 필요하다 |
 | CSR 읽기 데이터를 레지스터로 낸다 | 칩 STA에서 `cfg_addr` → `cfg_rdata` 조합 feedthrough가 입출력 지연(각 0.5 ns)에 걸려 −0.174 ns였다. 블록 경계에 입력 → 출력 조합 경로를 두지 않는다 | 읽기가 한 클럭 늦다. 테스트벤치는 주소를 낸 다음 엣지 뒤에 읽는다 |
 | CDC: Gray 포인터는 소스 클럭의 플롭에서 넘기고, 크로싱은 false path 대신 `set_max_delay` | 조합 XOR 출력이 넘어가면 여러 비트가 바뀌는 순간의 glitch를 싱크 플롭이 잡을 수 있다. false path는 그 경로의 지연을 타이밍이 보지 않게 만든다 | 포인터 레지스터가 늘고, 제약 값을 클럭 주기와 함께 관리해야 한다 |
 | mission TX 기어는 동기식, RX는 RDQS로 받아 Gray FIFO로만 넘김 | `clk_phy`는 PLL에서 컨트롤러 클럭과 위상이 맞으므로, 워드를 컨트롤러 엣지 반 주기 뒤의 PHY 엣지(E1)에서 받으면 핸드셰이크 없이 매 클럭 한 워드를 고정 지연으로 낸다. RDQS는 위상이 정해지지 않은 클럭이라 FIFO 말고는 넘어가지 않는다 | 이전의 토글 핸드셰이크 기어박스는 3 클럭에 한 워드라 교체했다. E1은 컨트롤러 토글을 PHY 클럭으로 비교해 찾는다(FF 1개) |
@@ -212,7 +212,7 @@ beats_per_burst = BL ÷ DDR_BITS  = 2   → PHY beat 20 bit (2 UI × 10핀)
 `tb_hsl_smoke`가 칩 전체(`hsl_base_die_lite`)와 DRAM 채널 모델을 묶고, 같은 프로세스 안에서 `tb_hsl_blocks`가 블록을 독립 인스턴스로 검사한다. 한 번의 실행이 칩, 블록, 채널 세 계층을 모두 돈다.
 
 - **스코어보드**: 호스트 요청 포트의 응답을 모두 참조 메모리와 비교한다. 요청이 받아들여지는 순간 그 주소의 기대값을 기록하고, 응답은 요청 순서로 온다. 회귀 전체에서 요청 4,791개, 읽기 1,720개(ModelSim 1,716개)를 비교해 불일치 0이다
-- **채널 모델의 핀 검사**: 프로토콜(열린 뱅크에 ACT, 닫힌 뱅크에 RD/WR, 열린 뱅크에 REFpb, 다른 버스의 명령), 같은 뱅크 타이밍(tRCD · tRP · tRAS · tRC · tRTP · 쓰기 회복 · tRFCpb · tRFC), 쓰기 데이터가 닿기 전에 같은 주소를 읽는 RD, WDQS 패턴을 세고, 회귀가 끝날 때 모두 0이어야 한다. 규칙을 일부러 tRCD + 1로 바꾼 모델은 1,162건을 잡았다. bank group 간 규칙(tCCD · tRRD · tFAW · tWTR · tRTW)은 컨트롤러 저장소의 체커가 맡는다
+- **채널 모델의 핀 검사**: 프로토콜(열린 뱅크에 ACT, 닫힌 뱅크에 RD/WR, 열린 뱅크에 REFpb, 다른 버스의 명령), 같은 뱅크 타이밍(tRCD · tRP · tRAS · tRC · tRTP · 쓰기 회복 · tRFCpb · tRFC), 쓰기 데이터가 닿기 전에 같은 주소를 읽는 RD, WDQS 패턴을 세고, 회귀가 끝날 때 모두 0이어야 한다. 규칙을 일부러 tRCD + 1로 바꾼 모델은 1,162건을 잡았다(`0193c04`). bank group 간 규칙(tCCD · tRRD · tFAW · tWTR · tRTW)은 컨트롤러 저장소의 체커가 맡는다
 - 체크마다 PASS나 FAIL을 찍는다. 하나라도 실패하면 마지막 줄이 `[ALL] FAIL (n)`이고 0이 아닌 코드로 끝난다. 타임아웃도 실패다
 - 비교는 `!==`, `===`로 한다. X나 Z가 나오면 통과가 아니라 실패다
 - 리셋은 클럭 negedge에서 푼다. posedge와 같은 시각에 풀면 첫 싱크러나이저 플롭과 레이스가 생긴다
@@ -688,7 +688,7 @@ WRCK  ─┐  ┌──┐  ┌──      Shift · Capture: WRCK 상승 엣지
 | 읽기 FIFO 크로싱 (`set_max_delay`) | Gray 포인터 0.104 ns / 0.625 ns, FIFO 데이터 → `clk` 0.402 ns / 1.25 ns |
 | `clk` 800 MHz (1.25 ns), HSL 로직 | 모두 통과. 컨트롤러의 쓰기 데이터 → DBI-AC → 레인 shift → TX 워드는 +0.130 ns(`8af801b`) |
 | `clk` 800 MHz, 컨트롤러 | −0.933 ns, 최소 주기 2.18 ns(458 MHz). 실패 끝점 1,971개, 모두 컨트롤러 안이거나 호스트 입력 → 컨트롤러다. `8af801b`에서는 −0.892 ns · 2.14 ns(467 MHz), `f018966`에서는 −0.909 ns · 2.16 ns, `6c29d60`에서는 −0.938 ns · 2.19 ns, `14fec6e`에서는 −0.930 ns(459 MHz)였다. 컨트롤러 RTL은 같아 ABC 실행 간 차이다 |
-| hold · removal | 최악 −0.048 ns: RDQS 도메인 리셋 핀 85개의 removal(`u_rst_rdqs`의 해제가 RDQS 엣지 0.18 ns 뒤에 닿고 removal 시간은 0.23 ns). CSR 리셋 핀 334개는 −0.017 ns(`8af801b`에서는 −0.038 ns). 둘 다 이상 클럭에서 리셋 해제가 조금 일찍 닿는 것이라 CTS 뒤 hold 수리 대상이다. 그 RDQS 리셋의 recovery는 +0.499 ns |
+| hold · removal | 최악 −0.048 ns: RDQS 도메인 리셋 핀 85개의 removal(`u_rst_rdqs`의 해제가 RDQS 엣지 0.18 ns 뒤에 닿고 removal 시간은 0.23 ns). `rst_sync_n` 쪽 리셋 핀 334개(CSR 164 · 1500 포트 170)는 최악 −0.017 ns(`8af801b`에서는 −0.038 ns). 둘 다 이상 클럭에서 리셋 해제가 조금 일찍 닿는 것이라 CTS 뒤 hold 수리 대상이다. 그 RDQS 리셋의 recovery는 +0.499 ns |
 
 숫자가 의미를 갖기 전에 흐름에서 먼저 고친 것:
 
@@ -727,7 +727,7 @@ STA가 짚어 RTL을 고친 HSL 경로(모두 800 MHz에서 통과로 바뀜):
 
 ## 이슈 기록
 
-실습 중에 고친 문제와 재검증(실행, 합성, 코드 리뷰)에서 나온 문제다. 이 표는 PDF 17쪽에도 있다.
+실습 중에 고친 문제와 재검증(실행, 합성, 코드 리뷰)에서 나온 문제다. PDF 17쪽에는 이 표의 주요 행이 있다.
 
 | ID | 증상 | 원인 | 조치 |
 | --- | --- | --- | --- |
@@ -837,7 +837,7 @@ portfolio-deck/  포트폴리오 PDF, PPTX (29쪽, 3d596a4 측정)
 - PHY 읽기 경로에 고정 지연 계약(DFI `tphy_rdlat`)이 없다. 컨트롤러가 `rddata_valid`로 순서만 맞춘다
 - `phy_en`이나 루프백은 컨트롤러가 idle일 때만 바꿔야 한다. PHY를 끄면 진행 중인 RD가 답을 받지 못한다. 루프백 RD는 핀에 CA를 내지 않으므로 auto-precharge(close page)와 함께 쓰면 DRAM 쪽 뱅크 상태가 어긋난다. 기본값인 open page에서만 쓴다
 - deskew(0–4 tap)는 아직 칩 경로에 없고 블록 테스트만 한다
-- mission 경로의 strobe와 UI 직렬화는 beat 단위로 추상화했다. 채널 모델이 RDQS를 CK + tDQSCK로 만들고, preamble · DQS gating은 없다
+- mission 경로의 strobe와 UI 직렬화는 beat 단위로 추상화했다. 채널 모델이 RDQS를 CK + tDQSCK로 만들고, preamble · DQS gating은 없다. RDQS 쪽 리셋 동기화기도 RDQS가 계속 돈다는 이 가정에 기댄다(실제 RDQS는 읽기 동안만 토글)
 - 루프백은 병렬 루프백만 있다. 직렬화 이후를 도는 핀 루프백은 없다
 - 레인 BIST는 DQ 8레인만 진단한다. DBI 핀 고장은 DBI를 끈 상태에서 양방향 반전이 상쇄돼 데이터에 드러나지 않는다(경계 스캔 방식의 핀 테스트가 필요하다. 1500 포트에는 아직 WBR이 없다)
 - 레인 BIST와 MBIST는 컨트롤러를 거치므로 호스트가 조용하고 응답을 다 받은 상태에서 시작해야 한다. 칩은 엔진이 도는 동안 호스트 포트를 막을 뿐 그 조건을 검사하지 않는다. 요청 포트가 닫힌 채 시작하면 엔진이 바로 거절하지만, 도는 중에 포트가 닫히면(PHY off) 엔진이 응답을 기다린 채 남아 soft reset으로 풀어야 한다
