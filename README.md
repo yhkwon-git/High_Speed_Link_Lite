@@ -9,7 +9,7 @@ Spec → Architecture → RTL → Verification → PD Guide
 [![Sim](https://img.shields.io/badge/Sim-Verilator%205.052%20%C2%B7%20ModelSim%2010.1d-2ea44f)](sim/)
 [![Synth](https://img.shields.io/badge/Synth-Yosys%200.52-8250df)](syn/)
 
-**[📄 포트폴리오 PDF (23쪽)](portfolio-deck/HighSpeedLinkLite_Portfolio.pdf)** · [PPTX](portfolio-deck/HighSpeedLinkLite_Portfolio.pptx) · [스터디 맵](docs/00_study_map.md)
+**[📄 포트폴리오 PDF (29쪽)](portfolio-deck/HighSpeedLinkLite_Portfolio.pdf)** · [PPTX](portfolio-deck/HighSpeedLinkLite_Portfolio.pptx) · [스터디 맵](docs/00_study_map.md)
 
 <a href="portfolio-deck/HighSpeedLinkLite_Portfolio.pdf"><img src="portfolio-deck/cover.png" width="760" alt="포트폴리오 표지. 클릭하면 PDF가 열립니다"></a>
 
@@ -25,7 +25,7 @@ SK hynix HBM Digital Design (RTL Design) 지원 · 권용현
 | RTL 35개 모듈<br>4,611줄 (주석 제외) | SMOKE · T1–T17<br>E7 · E9 · E11 | Toggle 78.8% | Nangate45<br>배선 없음 | 800 MHz · 1.6 GHz<br>RDQS · CDC |
 
 > [!NOTE]
-> 표와 아래 결과는 commit `14fec6e` 기준이다(Verilator 5.052, ModelSim-Altera 10.1d 모두 23/23 PASS). `0193c04`에서 메모리 컨트롤러를 [Mini DRAM Controller](https://github.com/yhkwon-git/mini-dram-controller) v4로 바꿔 PHY와 DFI 형태로 붙이고 저속 bypass framer를 없앴으며, `8af801b`에서 칩 STA(세 클럭과 CDC)를 더하고 STA가 짚은 HSL 경로를 고쳤으며, `f018966`에서 DRAM 배열의 March MBIST를, `6c29d60`에서 그 실패 로그로 spare를 고르는 BIRA와 fuse repair를, `ffc073d`에서 ECC 핀 두 개에 실은 데이터 SECDED를, `796d969`에서 trace buffer · 명령 카운터 · MISR(DFD)과 디버그 사례를, `14fec6e`에서 CSR 전체에 닿는 IEEE 1500 방식 시험 포트를 더했다. 절마다 적은 commit은 그 숫자를 잰 commit이다. PDF는 DBI-AC까지 담은 `631d3bd` 판이고(3–20쪽은 `4feb39f` 측정), `222bec3`에서 2쪽의 전제 문구만 바꿨다. 그 뒤의 레인 리페어, 읽기 레벨링, mission 데이터패스, 컨트롤러 교체, STA, MBIST, repair, ECC, DFD, 1500 포트는 이 README에만 있다.
+> 표와 아래 결과는 commit `14fec6e` 기준이다(Verilator 5.052, ModelSim-Altera 10.1d 모두 23/23 PASS). `0193c04`에서 메모리 컨트롤러를 [Mini DRAM Controller](https://github.com/yhkwon-git/mini-dram-controller) v4로 바꿔 PHY와 DFI 형태로 붙이고 저속 bypass framer를 없앴으며, `8af801b`에서 칩 STA(세 클럭과 CDC)를 더하고 STA가 짚은 HSL 경로를 고쳤으며, `f018966`에서 DRAM 배열의 March MBIST를, `6c29d60`에서 그 실패 로그로 spare를 고르는 BIRA와 fuse repair를, `ffc073d`에서 ECC 핀 두 개에 실은 데이터 SECDED를, `796d969`에서 trace buffer · 명령 카운터 · MISR(DFD)과 디버그 사례를, `14fec6e`에서 CSR 전체에 닿는 IEEE 1500 방식 시험 포트를 더했다. 절마다 적은 commit은 그 숫자를 잰 commit이다. PDF의 3–20쪽은 `4feb39f` 측정, 21–22쪽은 리뷰 수정과 DBI-AC, 23–28쪽은 MBIST · repair · ECC · DFD · 1500 포트와 STA(쪽마다 측정 commit)다. 레인 리페어, 읽기 레벨링, mission 데이터패스, 컨트롤러 교체는 아직 이 README에만 있다.
 
 ## 개요
 
