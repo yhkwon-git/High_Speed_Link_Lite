@@ -16,8 +16,8 @@
 // The BIST goes through the controller, so training runs in MISSION with
 // the PHY on (CTRL.phy_en) and the host quiet, after any lane repair. A start
 // while the request port is closed (open = 0) is refused: done and refused go
-// high, ok stays 0 and the codes keep their values (it would otherwise wait
-// for a BIST that never runs). Read direction only; write leveling is not
+// high, ok reads 0, and the codes and the eye readback keep the last run's
+// values (it would otherwise wait for a BIST that never runs). Read direction only; write leveling is not
 // modeled.
 // -----------------------------------------------------------------------------
 `default_nettype none
@@ -105,10 +105,12 @@ module hsl_rd_train (
             done    <= !open;
             ok      <= 1'b0;
             refused <= !open;
-            for (li = 0; li < DQ_W; li = li + 1) begin
-              cur_len[li]  <= '0;
-              best_lo[li]  <= '0;
-              best_len[li] <= '0;
+            if (open) begin
+              for (li = 0; li < DQ_W; li = li + 1) begin
+                cur_len[li]  <= '0;
+                best_lo[li]  <= '0;
+                best_len[li] <= '0;
+              end
             end
           end
         end

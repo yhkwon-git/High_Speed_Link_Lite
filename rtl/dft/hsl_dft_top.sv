@@ -12,7 +12,10 @@
 // is done; the lane BIST goes first. Read leveling waits for a lane BIST run
 // it kicked, so its start must not be dropped. tp_busy hands the port to them.
 // An engine started while the port is closed (tp_open = 0) refuses the start
-// (refused, done) instead of waiting forever for req_ready.
+// (refused, done) instead of waiting forever for req_ready. While a start is
+// held, lb_held / mb_held is 1: the CSR then reads that engine as busy and not
+// done, so a poll does not take the previous run's done and pass for the new
+// run. Read leveling still watches the engine's own busy.
 // hsl_bira turns the MBIST fail log into a spare row / column allocation, and
 // hsl_repair keeps the repair table (toward the array) and the fuses.
 // -----------------------------------------------------------------------------
@@ -46,6 +49,7 @@ module hsl_dft_top (
   input  wire  [hsl_pkg::BANK_W-1:0] lb_bank,
   input  wire  [hsl_pkg::ROW_W-1:0]  lb_row,
   output logic                       lb_busy,
+  output logic                       lb_held,     // a start is waiting for the port
   output logic                       lb_refused,
   output logic                       lb_done,
   output logic [hsl_pkg::DQ_W-1:0]   lb_lane_err,
@@ -59,6 +63,7 @@ module hsl_dft_top (
   input  wire  [2:0]                 mb_ncl,
   input  wire  [3:0]                 mb_log_sel,
   output logic                       mb_busy,
+  output logic                       mb_held,     // a start is waiting for the port
   output logic                       mb_refused,
   output logic                       mb_done,
   output logic [15:0]                mb_fail_cnt,
@@ -124,6 +129,8 @@ module hsl_dft_top (
     end
   end
 
+  assign lb_held      = lb_hold;
+  assign mb_held      = mb_hold;
   assign tp_busy      = lb_busy || mb_busy;
   assign tp_req_valid = lb_busy ? lb_req_valid : mb_req_valid;
   assign tp_req_write = lb_busy ? lb_req_write : mb_req_write;

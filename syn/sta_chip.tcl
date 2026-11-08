@@ -15,11 +15,10 @@ report_clock_properties
 
 puts "\n== constraint objects"
 foreach {what pattern} {
-  wgray     u_phy/u_mis/u_rx_fifo/wgray*
   wptr_g_s1 u_phy/u_mis/u_rx_fifo/wptr_g_s1*
-  rgray     u_phy/u_mis/u_rx_fifo/rgray*
   rptr_g_s1 u_phy/u_mis/u_rx_fifo/rptr_g_s1*
   mem       u_phy/u_mis/u_rx_fifo/mem*
+  rst_rdqs  u_phy/u_mis/u_rst_rdqs/sync_r*
 } {
   puts [format "%-10s %4d cells" $what [llength [get_cells $pattern]]]
 }
@@ -80,8 +79,11 @@ puts "\n== worst hold path per capture clock"
 report_checks -path_delay min -group_path_count 1 -digits 3
 
 puts "\n== read FIFO crossings (set_max_delay)"
-report_checks -from [get_cells u_phy/u_mis/u_rx_fifo/wgray*] -to [get_cells u_phy/u_mis/u_rx_fifo/wptr_g_s1*] -digits 3
-report_checks -from [get_cells u_phy/u_mis/u_rx_fifo/rgray*] -to [get_cells u_phy/u_mis/u_rx_fifo/rptr_g_s1*] -digits 3
+report_checks -from [get_clocks rdqs] -to [get_cells u_phy/u_mis/u_rx_fifo/wptr_g_s1*] -digits 3
+report_checks -from [get_clocks clk] -to [get_cells u_phy/u_mis/u_rx_fifo/rptr_g_s1*] -digits 3
+puts "\n== every Gray pointer bit under the bound (one line per sink flop)"
+report_checks -from [get_clocks rdqs] -to [get_cells u_phy/u_mis/u_rx_fifo/wptr_g_s1*] -group_path_count 8 -endpoint_path_count 1 -format end -digits 3
+report_checks -from [get_clocks clk] -to [get_cells u_phy/u_mis/u_rx_fifo/rptr_g_s1*] -group_path_count 8 -endpoint_path_count 1 -format end -digits 3
 report_checks -from [get_cells u_phy/u_mis/u_rx_fifo/mem*] -to [get_clocks clk] -digits 3
 
 puts "\n== 20 worst setup endpoints"

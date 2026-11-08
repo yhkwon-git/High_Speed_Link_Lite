@@ -85,6 +85,7 @@ module hsl_csr (
   input  wire         mission_mode,
   input  wire  [15:0] err_cnt,
   input  wire         lb_busy,
+  input  wire         lb_held,     // a start waits for the other engine
   input  wire         lb_refused,
   input  wire         lb_done,
   input  wire  [7:0]  lb_lane_err,
@@ -97,6 +98,7 @@ module hsl_csr (
   input  wire  [hsl_pkg::DQ_W*hsl_pkg::RX_DLY_W-1:0] rt_lo,
   input  wire  [hsl_pkg::DQ_W*6-1:0]                 rt_len,
   input  wire         mb_busy,
+  input  wire         mb_held,
   input  wire         mb_refused,
   input  wire         mb_done,
   input  wire  [15:0] mb_fail_cnt,
@@ -313,15 +315,18 @@ module hsl_csr (
         lb_fail_lane = 4'(li);
       end
     end
+    // A held start reads as busy, not done: the results still belong to the
+    // previous run.
     lb_status        = '0;
-    lb_status[0]     = lb_busy;
-    lb_status[1]     = lb_done;
-    lb_status[2]     = lb_done && (lb_lane_err == 8'h00) && !lb_refused;
-    lb_status[3]     = lb_done && lb_single && !lb_refused;
+    lb_status[0]     = lb_busy || lb_held;
+    lb_status[1]     = lb_done && !lb_held;
+    lb_status[2]     = lb_done && !lb_held && (lb_lane_err == 8'h00) && !lb_refused;
+    lb_status[3]     = lb_done && !lb_held && lb_single && !lb_refused;
     lb_status[7:4]   = lb_fail_lane;
     lb_status[15:8]  = lb_lane_err;
     lb_status[20:16] = lb_err_bursts;
-    lb_status[21]    = lb_refused;
+    lb_status[21]    = lb_refused && !lb_held;
+    lb_status[22]    = lb_held;
   end
 
   always_comb begin
@@ -349,8 +354,9 @@ module hsl_csr (
       CSR_TIMING1:   rdata_d = TIMING1_DEFAULT;
       CSR_LANE_BIST: rdata_d = lb_status;
       CSR_RDTRAIN:   rdata_d = rt_status;
-      CSR_MBIST:     rdata_d = {mb_fail_cnt, 6'h0, mb_refused, mb_log_n, mb_log_ovf,
-                                mb_done && (mb_fail_cnt == 16'h0) && !mb_refused, mb_done, mb_busy};
+      CSR_MBIST:     rdata_d = {mb_fail_cnt, 5'h0, mb_held, mb_refused && !mb_held, mb_log_n, mb_log_ovf,
+                                mb_done && !mb_held && (mb_fail_cnt == 16'h0) && !mb_refused,
+                                mb_done && !mb_held, mb_busy || mb_held};
       CSR_MBIST_LOG: rdata_d = {4'h0, mb_log_sel, mb_log_entry, 2'h0, mb_first_addr};
       CSR_MBIST_BITS: rdata_d = mb_first_bits;
       CSR_BIRA:      rdata_d = {24'h0, br_cols, br_rows, 1'b0, br_ok, br_done, br_busy};

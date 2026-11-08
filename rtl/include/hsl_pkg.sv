@@ -115,7 +115,8 @@ package hsl_pkg;
   // LANE_BIST read:  [0] busy, [1] done, [2] pass, [3] one lane failed,
   //                  [7:4] lowest failing DQ lane, [15:8] DQ lane errors,
   //                  [20:16] bursts with a mismatch, [21] start refused
-  //                  (request port closed; pass reads 0).
+  //                  (request port closed; pass reads 0), [22] start held
+  //                  while the MBIST runs (reads busy, not done).
   localparam int LB_BURSTS = 16; // words written, then read back, per run
 
   // MBIST: March test of DRAM bank [5:4], rows [15:8] .. +[19:16], columns
@@ -125,12 +126,15 @@ package hsl_pkg;
   //                   [19:16] rows - 1, [22:20] log2 columns (0..4)
   // MBIST read:       [0] busy, [1] done, [2] pass, [3] fail log overflow,
   //                   [8:4] failing words in the log, [9] start refused
-  //                   (request port closed), [31:16] failing reads
+  //                   (request port closed), [10] start held while the
+  //                   lane BIST runs (reads busy, not done),
+  //                   [31:16] failing reads
   // MBIST_LOG write:  [3:0] fail log entry to read back
-  // MBIST_LOG read:   [13:0] host address of the first failing read,
+  // MBIST_LOG read:   [13:0] host address of the first failing read (0 when
+  //                   none; a start clears it),
   //                   [23:16] the selected entry {row offset, column},
   //                   [27:24] its index
-  // MBIST_BITS read:  bits that differed in the first failing read
+  // MBIST_BITS read:  bits that differed in the first failing read (0 when none)
   localparam int MB_LOG_N = 16;
 
   // Repair. The array has SPR_N spare rows and SPC_N spare columns (a spare

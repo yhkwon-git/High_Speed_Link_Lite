@@ -1818,6 +1818,7 @@ module tb_hsl_smoke;
     logic [31:0] lg;
     logic [31:0] bits;
     logic [31:0] rt;
+    logic [31:0] rt0;
     string       name;
     string       line;
     begin
@@ -1930,6 +1931,12 @@ module tb_hsl_smoke;
       t13_zero(1);
       csr_write(CSR_MBIST, {9'h0, 3'd3, 4'd0, T13_ROW, 2'b00, T13_BANK, 1'b0, 2'd2, 1'b1});
       csr_write(CSR_LANE_BIST, {16'h0, T13_ROW + 8'd8, 2'b00, T13_BANK, 3'b000, 1'b1});
+      // The waiting start reads busy (held), not the last run's done.
+      csr_read(CSR_LANE_BIST, lb);
+      if ((lb[1:0] !== 2'b01) || (lb[22] !== 1'b1)) begin
+        $display("[T13] lane BIST start held behind the MBIST reads %h (expected busy, held, not done)", lb);
+        t13bad = t13bad + 1;
+      end
       guard = 0;
       lb = '0;
       while (((lb[0] === 1'b1) || (lb[1] !== 1'b1)) && (guard < 20000)) begin
@@ -1941,10 +1948,25 @@ module tb_hsl_smoke;
         $display("[T13] lane BIST start during MBIST: MBIST %h, lane BIST %h", st, lb);
         t13bad = t13bad + 1;
       end
+      // A start clears the first-fail address and bits: this run passed after
+      // the failing DQ pin run above, so both read 0.
+      csr_read(CSR_MBIST_BITS, bits);
+      csr_write(CSR_MBIST_LOG, 32'h0);
+      csr_read(CSR_MBIST_LOG, lg);
+      if ((bits !== 32'h0) || (lg[13:0] !== 14'h0)) begin
+        $display("[T13] passing run after a failing one: first bits %h, first address %h (expected 0)",
+                 bits, lg[13:0]);
+        t13bad = t13bad + 1;
+      end
       t13_zero(1);
       cyc = mb_cyc;
       csr_write(CSR_LANE_BIST, {16'h0, T13_ROW + 8'd8, 2'b00, T13_BANK, 3'b000, 1'b1});
       csr_write(CSR_MBIST, {9'h0, 3'd3, 4'd0, T13_ROW, 2'b00, T13_BANK, 1'b0, 2'd2, 1'b1});
+      csr_read(CSR_MBIST, st);
+      if ((st[1:0] !== 2'b01) || (st[10] !== 1'b1)) begin
+        $display("[T13] MBIST start held behind the lane BIST reads %h (expected busy, held, not done)", st);
+        t13bad = t13bad + 1;
+      end
       guard = 0;
       lb = '0;
       while (((lb[0] === 1'b1) || (lb[1] !== 1'b1)) && (guard < 20000)) begin
@@ -1968,6 +1990,11 @@ module tb_hsl_smoke;
       // The request port closed (PHY off, MISSION stays): every engine
       // refuses its start at once (done, refused, pass 0) instead of waiting
       // forever for req_ready, and BIRA calls the refused MBIST not repairable.
+      // Read leveling runs once first: its refused start must keep the codes
+      // and the eye readback (lane 0 compared below).
+      rd_train(rt0);
+      csr_write(CSR_RDTRAIN, 32'h0);
+      csr_read(CSR_RDTRAIN, rt0);
       csr_write(CSR_CTRL, BYP);
       wait_cycles(4);
       cyc = mb_cyc;
@@ -1982,9 +2009,11 @@ module tb_hsl_smoke;
       wait_cycles(4);
       csr_read(CSR_BIRA, lg);
       if ((lb[2:0] !== 3'b010) || (lb[21] !== 1'b1) || (st[2:0] !== 3'b010) || (st[9] !== 1'b1) ||
-          (rt[3:0] !== 4'b1010) || (lg[2:0] !== 3'b010) || (mb_cyc != cyc)) begin
-        $display("[T13] closed port: lane BIST %h, MBIST %h, read leveling %h, BIRA %h, MBIST busy %0d clocks",
-                 lb, st, rt, lg, mb_cyc - cyc);
+          (rt[3:0] !== 4'b1010) || (lg[2:0] !== 3'b010) || (mb_cyc != cyc) ||
+          (rt0[29:24] == 6'd0) || (rt[12:8] !== rt0[12:8]) || (rt[20:16] !== rt0[20:16]) ||
+          (rt[29:24] !== rt0[29:24])) begin
+        $display("[T13] closed port: lane BIST %h, MBIST %h, read leveling %h (before %h), BIRA %h, MBIST busy %0d clocks",
+                 lb, st, rt, rt0, lg, mb_cyc - cyc);
         t13bad = t13bad + 1;
       end else begin
         $display("[T13] request port closed: lane BIST, MBIST and read leveling refuse the start at once (done, refused, pass 0); BIRA calls the refused MBIST not repairable");

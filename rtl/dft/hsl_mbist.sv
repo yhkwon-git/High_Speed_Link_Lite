@@ -22,7 +22,8 @@
 // logic (queue address match, req_ready) then sees no MBIST logic in front.
 //
 // Each mismatching read counts in fail_cnt (saturating). The first one keeps
-// its host address and the bits that differed. The fail log keeps each
+// its host address and the bits that differed; a start clears both, so a run
+// without failures reads them as 0. The fail log keeps each
 // failing word once, as {row offset, column}, up to LOG_N words; one more
 // sets log_ovf. The repair engine (hsl_bira) reads the whole log (log_keys).
 // A read's difference is registered when its response comes (S_RWAIT) and
@@ -215,6 +216,8 @@ module hsl_mbist #(
             opi      <= 1'b0;
             idx      <= '0;
             fail_cnt <= '0;
+            first_addr <= '0;
+            first_bits <= '0;
             log_n    <= '0;
             log_ovf  <= 1'b0;
             state    <= open ? S_LOAD : S_IDLE;

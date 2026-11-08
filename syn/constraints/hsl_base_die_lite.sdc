@@ -47,7 +47,7 @@ set_false_path -to [get_pins {u_phy/u_mis/u_rst_rdqs/sync_r*_reg/RN}]
 # network. OpenSTA 3.1 accepts this command but does not apply it, so
 # syn/sta_chip.sh buffers the tree instead (syn/fanout_buffer.py). Unbuffered,
 # one gate drives every load and its delay is read far off the cell tables.
-set_ideal_network [get_pins {u_rst/rst_no u_csr/soft_rst}]
+set_ideal_network [get_pins {u_rst/rst_no u_csr/soft_rst u_phy/u_mis/u_rst_rdqs/rst_no}]
 
 # 40% of the controller period. The old 4.0 ns belonged to the 10 ns smoke clock.
 # The 1500 port inputs go to 2-flop synchronizers (hsl_w1500); WRCK is slow
@@ -116,12 +116,15 @@ set_input_delay -clock rdqs 0.25 [get_ports {
 # of each other. Not false paths.
 #   wgray (rdqs) -> wptr_g_s1 (clk)
 #   rgray (clk)  -> rptr_g_s1 (rdqs)
+# The bound names the source clock and the sink flops, not the source cells:
+# the Gray MSB equals the binary MSB, so synthesis keeps one flop for both
+# (wbin[2], rbin[2]) and a wgray*/rgray* cell pattern misses that bit.
 set_max_delay $phy_period \
-  -from [get_cells u_phy/u_mis/u_rx_fifo/wgray*] \
+  -from [get_clocks rdqs] \
   -to   [get_cells u_phy/u_mis/u_rx_fifo/wptr_g_s1*]
 
 set_max_delay $phy_period \
-  -from [get_cells u_phy/u_mis/u_rx_fifo/rgray*] \
+  -from [get_clocks clk] \
   -to   [get_cells u_phy/u_mis/u_rx_fifo/rptr_g_s1*]
 
 # FIFO data: written on RDQS, read in the controller clock only after the
