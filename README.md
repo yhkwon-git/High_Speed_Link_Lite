@@ -25,7 +25,7 @@ SK hynix HBM Digital Design (RTL Design) 지원 · 권용현
 | RTL 35개 모듈<br>4,659줄 (주석 제외) | SMOKE · T1–T17<br>E7 · E9 · E11 | Toggle 79.5% | Nangate45<br>배선 없음 | 800 MHz · 1.6 GHz<br>RDQS · CDC |
 
 > [!NOTE]
-> 표와 아래 결과는 commit `3d596a4` 기준이다(Verilator 5.052, ModelSim-Altera 10.1d 모두 23/23 PASS). `0193c04`에서 메모리 컨트롤러를 [Mini DRAM Controller](https://github.com/yhkwon-git/mini-dram-controller) v4로 바꿔 PHY와 DFI 형태로 붙이고 저속 bypass framer를 없앴으며, `8af801b`에서 칩 STA(세 클럭과 CDC)를 더하고 STA가 짚은 HSL 경로를 고쳤으며, `f018966`에서 DRAM 배열의 March MBIST를, `6c29d60`에서 그 실패 로그로 spare를 고르는 BIRA와 fuse repair를, `ffc073d`에서 ECC 핀 두 개에 실은 데이터 SECDED를, `796d969`에서 trace buffer · 명령 카운터 · MISR(DFD)과 디버그 사례를, `14fec6e`에서 CSR 전체에 닿는 IEEE 1500 방식 시험 포트를 더했고, `3d596a4`에서 리뷰가 짚은 세 가지(DFD가 카운터 clear를 이벤트로 보던 것, RDQS 쪽 리셋 해제의 동기화, 요청 포트가 닫힌 채 시작한 시험 엔진)를 고쳤다. 절마다 적은 commit은 그 숫자를 잰 commit이다. PDF는 2–20쪽과 23–28쪽이 `14fec6e`의 칩을 담고 쪽마다 측정 commit을 적었으며, 21–22쪽은 DBI-AC와 리뷰 수정의 당시 기록이다.
+> 표와 아래 결과는 commit `3d596a4` 기준이다(Verilator 5.052, ModelSim-Altera 10.1d 모두 23/23 PASS). `0193c04`에서 메모리 컨트롤러를 [Mini DRAM Controller](https://github.com/yhkwon-git/mini-dram-controller) v4로 바꿔 PHY와 DFI 형태로 붙이고 저속 bypass framer를 없앴으며, `8af801b`에서 칩 STA(세 클럭과 CDC)를 더하고 STA가 짚은 HSL 경로를 고쳤으며, `f018966`에서 DRAM 배열의 March MBIST를, `6c29d60`에서 그 실패 로그로 spare를 고르는 BIRA와 fuse repair를, `ffc073d`에서 ECC 핀 두 개에 실은 데이터 SECDED를, `796d969`에서 trace buffer · 명령 카운터 · MISR(DFD)과 디버그 사례를, `14fec6e`에서 CSR 전체에 닿는 IEEE 1500 방식 시험 포트를 더했고, `3d596a4`에서 리뷰가 짚은 세 가지(DFD가 카운터 clear를 이벤트로 보던 것, RDQS 쪽 리셋 해제의 동기화, 요청 포트가 닫힌 채 시작한 시험 엔진)를 고쳤다. 절마다 적은 commit은 그 숫자를 잰 commit이다. PDF는 2–20쪽과 23–28쪽이 이 칩(`3d596a4`)을 담고 쪽마다 측정 commit을 적었으며, 21–22쪽은 DBI-AC와 리뷰 수정의 당시 기록이다.
 
 ## 개요
 
@@ -717,7 +717,7 @@ STA가 짚어 RTL을 고친 HSL 경로(모두 800 MHz에서 통과로 바뀜):
 
 컨트롤러가 800 MHz를 닫지 못하는 이유: 임계 경로는 큐 엔트리의 bank → 스케줄러의 row hit · 후보 계산 → refresh 차단 mux → FR-FCFS 선택 → ACT 결정 → 뱅크 타이머 갱신으로, 한 클럭에 명령을 고르고 모든 타이머를 갱신하는 루프다(약 35단, 2.1 ns). 호스트 입력도 컨트롤러의 `req_ready`가 요청 주소에 조합으로 걸려 있어(쓰기 큐 forwarding, 읽기 큐 충돌 검사) 입력 → `req_ready`가 feedthrough다(−0.526 ns, `8af801b`에서 −0.483). 같은 조합 경로가 `req_ready`를 받는 테스트 엔진의 상태 플롭까지 이어진다(끝점 19개, −0.275 ns, `14fec6e`에서는 −0.319).
 
-같은 컨트롤러 RTL이 컨트롤러 저장소의 `make ppa`에서는 reg2reg 2.831 ns(348 MHz)다. 두 흐름이 다르다: 그쪽은 `mem_ctrl`만 flatten해 ABC에 타이밍 목표 없이 매핑하고 팬아웃 버퍼를 넣지 않는다. 여기서는 칩 전체를 모듈 경계를 유지한 채 `abc -D 1250 -constr`(목표 1.25 ns, 입력 BUF_X1 · 부하 2 fF)로 매핑하고, 팬아웃 버퍼 트리(부하 16개마다)를 넣는다. 둘 다 배선 없는 Nangate45 typical 값이고, 어느 차이가 몇 %인지는 나눠 재지 않았다.
+같은 컨트롤러 RTL이 컨트롤러 저장소의 `make ppa`에서는 최소 주기 2.874 ns(reg2reg 2.831 + setup 0.043, 348 MHz)다. 두 흐름이 다르다: 그쪽은 `mem_ctrl`만 flatten해 ABC에 타이밍 목표 없이 매핑하고 팬아웃 버퍼를 넣지 않는다. 여기서는 칩 전체를 모듈 경계를 유지한 채 `abc -D 1250 -constr`(목표 1.25 ns, 입력 BUF_X1 · 부하 2 fF)로 매핑하고, 팬아웃 버퍼 트리(부하 16개마다)를 넣는다. 둘 다 배선 없는 Nangate45 typical 값이고, 어느 차이가 몇 %인지는 나눠 재지 않았다.
 
 | 선택지 | 내용 | 판단 |
 | --- | --- | --- |
@@ -807,7 +807,7 @@ syn/             filelist.f, constraints/hsl_base_die_lite.sdc, ppa_block.sh (�
                  sta_chip.sh · sta_chip.tcl (칩 STA), fanout_buffer.py, area_by_block.py,
                  lib/hsl_phy_clk_stub.lib (PLL 타이밍 스텁)
 docs/            스펙부터 PD 가이드까지 설계 문서, 실습 기록, images/
-portfolio-deck/  포트폴리오 PDF, PPTX (29쪽, 14fec6e 측정)
+portfolio-deck/  포트폴리오 PDF, PPTX (29쪽, 3d596a4 측정)
 ```
 
 ## 문서
