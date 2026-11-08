@@ -35,6 +35,12 @@ create_clock -name rdqs -period $phy_period [get_ports pin_rdqs]
 # A real deck would constrain the synchronizer cell and still check recovery.
 set_false_path -from [get_ports rst_n]
 
+# RDQS-domain reset (hsl_phy_mis/u_rst_rdqs): asserted asynchronously with the
+# controller-clock reset, released by two RDQS flops. Only the assertion path
+# into those two flops is left untimed; the capture flops and the FIFO's write
+# side they release are timed against rdqs (recovery and removal).
+set_false_path -to [get_pins {u_phy/u_mis/u_rst_rdqs/sync_r*_reg/RN}]
+
 # Pre-layout: the synchronized reset (and soft_rst, which joins it) reaches
 # every flop's reset pin, about 2,700 of them. Like a clock tree, that tree is
 # built in place and route; until then synthesis treats it as an ideal

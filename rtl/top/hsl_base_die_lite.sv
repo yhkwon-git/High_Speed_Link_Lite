@@ -164,6 +164,7 @@ module hsl_base_die_lite (
   logic [7:0] lb_lane_err;
   logic [4:0] lb_err_bursts;
   logic rt_start, rt_bist_start, rt_busy, rt_done, rt_ok;
+  logic lb_refused, mb_refused, rt_refused;   // a start found the request port closed
   logic [hsl_pkg::DQ_W*hsl_pkg::RX_DLY_W-1:0] rt_lo;
   logic [hsl_pkg::DQ_W*6-1:0] rt_len;
   logic obs_tx_valid;
@@ -238,10 +239,12 @@ module hsl_base_die_lite (
     .mission_mode (mission_mode),
     .err_cnt      (err_cnt),
     .lb_busy      (lb_busy),
+    .lb_refused   (lb_refused),
     .lb_done      (lb_done),
     .lb_lane_err  (lb_lane_err),
     .lb_err_bursts(lb_err_bursts),
     .rt_busy      (rt_busy),
+    .rt_refused   (rt_refused),
     .rt_done      (rt_done),
     .rt_ok        (rt_ok),
     .rt_code      (rx_dly_code),
@@ -255,6 +258,7 @@ module hsl_base_die_lite (
     .mb_ncl       (mb_ncl),
     .mb_log_sel   (mb_log_sel),
     .mb_busy      (mb_busy),
+    .mb_refused   (mb_refused),
     .mb_done      (mb_done),
     .mb_fail_cnt  (mb_fail_cnt),
     .mb_first_addr(mb_first_addr),
@@ -322,6 +326,8 @@ module hsl_base_die_lite (
     .clk           (clk),
     .rst_n         (rst_logic_n),
     .start         (rt_start),
+    .open          (port_open),
+    .refused       (rt_refused),
     .bist_start    (rt_bist_start),
     .bist_busy     (lb_busy),
     .bist_lane_err (lb_lane_err),
@@ -402,6 +408,7 @@ module hsl_base_die_lite (
     .prbs_data     (prbs_data),
     .err_cnt       (err_cnt),
     .q_empty       (mc_q_empty),
+    .tp_open       (port_open),
     .tp_busy       (tp_busy),
     .tp_req_valid  (tp_req_valid),
     .tp_req_ready  (port_open && mc_req_ready),
@@ -414,6 +421,7 @@ module hsl_base_die_lite (
     .lb_bank       (lb_bank),
     .lb_row        (lb_row),
     .lb_busy       (lb_busy),
+    .lb_refused    (lb_refused),
     .lb_done       (lb_done),
     .lb_lane_err   (lb_lane_err),
     .lb_err_bursts (lb_err_bursts),
@@ -425,6 +433,7 @@ module hsl_base_die_lite (
     .mb_ncl        (mb_ncl),
     .mb_log_sel    (mb_log_sel),
     .mb_busy       (mb_busy),
+    .mb_refused    (mb_refused),
     .mb_done       (mb_done),
     .mb_fail_cnt   (mb_fail_cnt),
     .mb_first_addr (mb_first_addr),

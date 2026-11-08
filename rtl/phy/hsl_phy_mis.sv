@@ -217,12 +217,23 @@ module hsl_phy_mis (
   // WDQS toggles once per UI while data is out: high in UI 0, low in UI 1.
   assign tx_dqs = tx_dv ? {{(DDR_BITS-1){1'b0}}, 1'b1} : '0;
 
+  // RDQS-domain reset: asserted with rst_n, released by two RDQS flops, so the
+  // capture flops and the FIFO's write side leave reset on their own clock.
+  // RDQS follows CK, which is gated by phy_en: while the PHY is off the RDQS
+  // domain stays in reset, and it is released two RDQS edges after CK starts.
+  logic rst_rdqs_n;
+  hsl_rst_sync u_rst_rdqs (
+    .clk    (rdqs),
+    .rst_ni (rst_n),
+    .rst_no (rst_rdqs_n)
+  );
+
   // RDQS domain: two beats make a burst.
   // The burst is written into the FIFO one RDQS edge after its second beat,
   // from registers (the write enable straight from pin_rx_dv, after its input
   // delay, did not reach all 48 bits of every entry in time).
-  always_ff @(posedge rdqs or negedge rst_n) begin
-    if (!rst_n) begin
+  always_ff @(posedge rdqs or negedge rst_rdqs_n) begin
+    if (!rst_rdqs_n) begin
       half    <= 1'b0;
       rx_lo   <= '0;
       rx_lo_e <= '0;
@@ -248,7 +259,8 @@ module hsl_phy_mis (
   ) u_rx_fifo (
     .clk_w    (rdqs),
     .clk_r    (clk),
-    .rst_n    (rst_n),
+    .rst_w_n  (rst_rdqs_n),
+    .rst_r_n  (rst_n),
     .wr_en    (rx_wr),
     .wr_data  (rx_burst),
     .wr_full  (fifo_full),

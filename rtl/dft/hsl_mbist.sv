@@ -25,8 +25,15 @@
 // its host address and the bits that differed. The fail log keeps each
 // failing word once, as {row offset, column}, up to LOG_N words; one more
 // sets log_ovf. The repair engine (hsl_bira) reads the whole log (log_keys).
+// A read's difference is registered when its response comes (S_RWAIT) and
+// logged in the next clock (S_NEXT), which the next operation waits for
+// anyway: the controller's response mux then feeds a register, not the log's
+// duplicate check (that path missed 800 MHz in the chip STA).
 // Start with the host quiet; the top hands this engine the request port while
-// it runs.
+// it runs. A start while the request port is closed (open = 0) is refused:
+// done and refused go high at once, the results read as empty, and no request
+// is sent (a run would otherwise wait forever on req_ready). A port closed
+// during a run is not caught here; a soft reset clears that case.
 // -----------------------------------------------------------------------------
 `default_nettype none
 
@@ -43,8 +50,10 @@ module hsl_mbist #(
   input  wire  [3:0]                 nrows_m1,
   input  wire  [2:0]                 ncols_log2,
   input  wire                        q_empty,
+  input  wire                        open,        // the request port is open
 
   output logic                       busy,
+  output logic                       refused,     // the last start found the port closed
   output logic                       req_valid,
   input  wire                        req_ready,
   output logic                       req_write,
@@ -135,6 +144,8 @@ module hsl_mbist #(
   logic [7:0]        key_q;      // the loaded op's {row offset, column}
   logic [DATA_W-1:0] exp_word;
   logic [DATA_W-1:0] diff;
+  logic [DATA_W-1:0] diff_q;     // the last read's difference, logged in S_NEXT
+  logic              chk_q;      // diff_q holds a read to log
   logic              seen;
 
   assign el       = elem_of(algo_r, e);
@@ -165,6 +176,7 @@ module hsl_mbist #(
     if (!rst_n) begin
       state      <= S_IDLE;
       busy       <= 1'b0;
+      refused    <= 1'b0;
       done       <= 1'b0;
       algo_r     <= '0;
       bank_r     <= '0;
@@ -179,6 +191,8 @@ module hsl_mbist #(
       req_write  <= 1'b0;
       exp_q      <= 1'b0;
       key_q      <= '0;
+      diff_q     <= '0;
+      chk_q      <= 1'b0;
       fail_cnt   <= '0;
       first_addr <= '0;
       first_bits <= '0;
@@ -189,8 +203,9 @@ module hsl_mbist #(
       case (state)
         S_IDLE: begin
           if (start) begin
-            busy     <= 1'b1;
-            done     <= 1'b0;
+            busy     <= open;
+            refused  <= !open;
+            done     <= !open;
             algo_r   <= (algo == 2'd3) ? 2'd2 : algo;
             bank_r   <= bank;
             row0_r   <= row0;
@@ -202,7 +217,7 @@ module hsl_mbist #(
             fail_cnt <= '0;
             log_n    <= '0;
             log_ovf  <= 1'b0;
-            state    <= S_LOAD;
+            state    <= open ? S_LOAD : S_IDLE;
           end
         end
         S_LOAD: begin
@@ -237,27 +252,31 @@ module hsl_mbist #(
         end
         S_RWAIT: begin
           if (rsp_valid) begin
-            if (diff != '0) begin
-              if (fail_cnt == 16'd0) begin
-                first_addr <= req_addr;
-                first_bits <= diff;
-              end
-              if (fail_cnt != 16'hFFFF) begin
-                fail_cnt <= fail_cnt + 16'd1;
-              end
-              if (!seen) begin
-                if (log_n < 5'(LOG_N)) begin
-                  log_key[log_n[3:0]] <= key_q;
-                  log_n               <= log_n + 5'd1;
-                end else begin
-                  log_ovf <= 1'b1;
-                end
-              end
-            end
-            state <= S_NEXT;
+            diff_q <= diff;
+            chk_q  <= 1'b1;
+            state  <= S_NEXT;
           end
         end
         S_NEXT: begin
+          // The read just answered (req_addr and key_q still hold it).
+          chk_q <= 1'b0;
+          if (chk_q && (diff_q != '0)) begin
+            if (fail_cnt == 16'd0) begin
+              first_addr <= req_addr;
+              first_bits <= diff_q;
+            end
+            if (fail_cnt != 16'hFFFF) begin
+              fail_cnt <= fail_cnt + 16'd1;
+            end
+            if (!seen) begin
+              if (log_n < 5'(LOG_N)) begin
+                log_key[log_n[3:0]] <= key_q;
+                log_n               <= log_n + 5'd1;
+              end else begin
+                log_ovf <= 1'b1;
+              end
+            end
+          end
           state <= S_LOAD;
           if (el[EL_TWO] && !opi) begin
             opi <= 1'b1;

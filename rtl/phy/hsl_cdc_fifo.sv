@@ -11,6 +11,9 @@
 // Constrain the crossing (source Gray flop -> *_s1) with set_max_delay.
 // Do not false-path it. SAME_CLOCK is retained; Gray code is correct for
 // both the split-clock case and the tied-clock case.
+// Each side has its own reset, released in its own clock (rst_w_n in clk_w,
+// rst_r_n in clk_r). Both assert together; the side released later starts
+// from the same empty pointers.
 // -----------------------------------------------------------------------------
 `default_nettype none
 
@@ -20,7 +23,8 @@ module hsl_cdc_fifo #(
 ) (
   input  wire              clk_w,
   input  wire              clk_r,
-  input  wire              rst_n,
+  input  wire              rst_w_n,   // released in clk_w
+  input  wire              rst_r_n,   // released in clk_r
   input  wire              wr_en,
   input  wire  [WIDTH-1:0] wr_data,
   output logic             wr_full,
@@ -55,8 +59,8 @@ module hsl_cdc_fifo #(
 
   // wgray is loaded with bin2gray(wbin_next) on the edge that loads wbin, so
   // it always equals bin2gray(wbin). Full and empty timing is unchanged.
-  always_ff @(posedge clk_w or negedge rst_n) begin
-    if (!rst_n) begin
+  always_ff @(posedge clk_w or negedge rst_w_n) begin
+    if (!rst_w_n) begin
       wbin      <= '0;
       wgray     <= '0;
       rptr_g_s1 <= '0;
@@ -76,8 +80,8 @@ module hsl_cdc_fifo #(
     end
   end
 
-  always_ff @(posedge clk_r or negedge rst_n) begin
-    if (!rst_n) begin
+  always_ff @(posedge clk_r or negedge rst_r_n) begin
+    if (!rst_r_n) begin
       rbin      <= '0;
       rgray     <= '0;
       wptr_g_s1 <= '0;

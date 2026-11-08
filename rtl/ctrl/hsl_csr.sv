@@ -12,7 +12,8 @@
 // writes: the timings are the controller's dram_pkg constants. CTRL bit 5
 // (the old phy_bypass) is reserved and reads 0.
 // A write to LANE_BIST with bit 0 set starts a lane test; reads return its
-// status. MBIST does the same for a March test of the DRAM array; MBIST_LOG
+// status. A start while the request port is closed is refused (LANE_BIST[21],
+// MBIST[9], RDTRAIN[3]); pass and ok then read 0. MBIST does the same for a March test of the DRAM array; MBIST_LOG
 // and MBIST_BITS read back its first failure and its fail log. RDTRAIN works
 // the same way for read leveling and reads back one lane's result, chosen by
 // [6:4] of the last write (layouts in hsl_pkg). BIRA, REPAIR and FUSE run the
@@ -84,16 +85,19 @@ module hsl_csr (
   input  wire         mission_mode,
   input  wire  [15:0] err_cnt,
   input  wire         lb_busy,
+  input  wire         lb_refused,
   input  wire         lb_done,
   input  wire  [7:0]  lb_lane_err,
   input  wire  [4:0]  lb_err_bursts,
   input  wire         rt_busy,
+  input  wire         rt_refused,
   input  wire         rt_done,
   input  wire         rt_ok,
   input  wire  [hsl_pkg::DQ_W*hsl_pkg::RX_DLY_W-1:0] rt_code,
   input  wire  [hsl_pkg::DQ_W*hsl_pkg::RX_DLY_W-1:0] rt_lo,
   input  wire  [hsl_pkg::DQ_W*6-1:0]                 rt_len,
   input  wire         mb_busy,
+  input  wire         mb_refused,
   input  wire         mb_done,
   input  wire  [15:0] mb_fail_cnt,
   input  wire  [hsl_pkg::ADDR_W-1:0] mb_first_addr,
@@ -312,11 +316,12 @@ module hsl_csr (
     lb_status        = '0;
     lb_status[0]     = lb_busy;
     lb_status[1]     = lb_done;
-    lb_status[2]     = lb_done && (lb_lane_err == 8'h00);
-    lb_status[3]     = lb_done && lb_single;
+    lb_status[2]     = lb_done && (lb_lane_err == 8'h00) && !lb_refused;
+    lb_status[3]     = lb_done && lb_single && !lb_refused;
     lb_status[7:4]   = lb_fail_lane;
     lb_status[15:8]  = lb_lane_err;
     lb_status[20:16] = lb_err_bursts;
+    lb_status[21]    = lb_refused;
   end
 
   always_comb begin
@@ -324,6 +329,7 @@ module hsl_csr (
     rt_status[0]     = rt_busy;
     rt_status[1]     = rt_done;
     rt_status[2]     = rt_ok;
+    rt_status[3]     = rt_refused;
     rt_status[6:4]   = rt_sel;
     rt_status[12:8]  = rt_code[rt_sel*RX_DLY_W +: RX_DLY_W];
     rt_status[20:16] = rt_lo[rt_sel*RX_DLY_W +: RX_DLY_W];
@@ -343,8 +349,8 @@ module hsl_csr (
       CSR_TIMING1:   rdata_d = TIMING1_DEFAULT;
       CSR_LANE_BIST: rdata_d = lb_status;
       CSR_RDTRAIN:   rdata_d = rt_status;
-      CSR_MBIST:     rdata_d = {mb_fail_cnt, 7'h0, mb_log_n, mb_log_ovf,
-                                mb_done && (mb_fail_cnt == 16'h0), mb_done, mb_busy};
+      CSR_MBIST:     rdata_d = {mb_fail_cnt, 6'h0, mb_refused, mb_log_n, mb_log_ovf,
+                                mb_done && (mb_fail_cnt == 16'h0) && !mb_refused, mb_done, mb_busy};
       CSR_MBIST_LOG: rdata_d = {4'h0, mb_log_sel, mb_log_entry, 2'h0, mb_first_addr};
       CSR_MBIST_BITS: rdata_d = mb_first_bits;
       CSR_BIRA:      rdata_d = {24'h0, br_cols, br_rows, 1'b0, br_ok, br_done, br_busy};

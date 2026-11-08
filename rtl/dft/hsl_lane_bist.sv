@@ -11,8 +11,12 @@
 // and are only counted. Bank timing, refresh and the bus turnaround stay with
 // the controller.
 // Start with the host quiet, loopback off and the PHY on; the top holds the
-// host port while busy. DBI lane faults do not show with DBI off: the two
-// inversions cancel. This engine diagnoses the 8 DQ lanes.
+// host port while busy. A start while the request port is closed (open = 0:
+// not MISSION, or CTRL.phy_en off) is refused: done and refused go high at
+// once and nothing is sent, instead of a run that would wait forever. A port
+// closed during a run is not caught here; a soft reset clears that case.
+// DBI lane faults do not show with DBI off: the two inversions cancel. This
+// engine diagnoses the 8 DQ lanes.
 // -----------------------------------------------------------------------------
 `default_nettype none
 
@@ -23,8 +27,10 @@ module hsl_lane_bist (
   input  wire  [hsl_pkg::BANK_W-1:0] bank,
   input  wire  [hsl_pkg::ROW_W-1:0]  row,
   input  wire                        q_empty,
+  input  wire                        open,        // the request port is open
 
   output logic                       busy,
+  output logic                       refused,     // the last start found the port closed
   output logic                       req_valid,
   input  wire                        req_ready,
   output logic                       req_write,
@@ -100,6 +106,7 @@ module hsl_lane_bist (
   always_ff @(posedge clk or negedge rst_n) begin
     if (!rst_n) begin
       busy       <= 1'b0;
+      refused    <= 1'b0;
       done       <= 1'b0;
       phase      <= P_WR;
       idx        <= '0;
@@ -110,8 +117,9 @@ module hsl_lane_bist (
       err_bursts <= '0;
     end else if (!busy) begin
       if (start) begin
-        busy       <= 1'b1;
-        done       <= 1'b0;
+        busy       <= open;
+        refused    <= !open;
+        done       <= !open;
         phase      <= P_WR;
         idx        <= '0;
         nrsp       <= '0;

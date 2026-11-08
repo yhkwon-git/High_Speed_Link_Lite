@@ -318,7 +318,8 @@ module tb_hsl_blocks (
   hsl_cdc_fifo #(.WIDTH(32), .SAME_CLOCK(0)) u_fifo (
     .clk_w(wclk),
     .clk_r(rclk),
-    .rst_n(frst),
+    .rst_w_n(frst),
+    .rst_r_n(frst),
     .wr_en(fwen),
     .wr_data(fwdata),
     .wr_full(ffull),

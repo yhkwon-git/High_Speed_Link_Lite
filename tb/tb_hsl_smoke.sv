@@ -1538,7 +1538,17 @@ module tb_hsl_smoke;
     begin
       t12bad = 0;
       soft_reset();
+      // The RDQS domain stays in reset while the PHY is off (CK gated, so no
+      // RDQS) and is released by RDQS itself once CK runs.
+      if (dut.u_phy.u_mis.rst_rdqs_n !== 1'b0) begin
+        $display("[T12] RDQS-domain reset released with the PHY off");
+        t12bad = t12bad + 1;
+      end
       arm_mission(32'h0);
+      if (dut.u_phy.u_mis.rst_rdqs_n !== 1'b1) begin
+        $display("[T12] RDQS-domain reset still held with the PHY on");
+        t12bad = t12bad + 1;
+      end
 
       // The pattern T12 timed on the in-order controller (162 cycles at
       // 6a5a4ce): 16 writes, then 16 reads of them, to one row, sent back to
@@ -1807,6 +1817,7 @@ module tb_hsl_smoke;
     logic [31:0] st;
     logic [31:0] lg;
     logic [31:0] bits;
+    logic [31:0] rt;
     string       name;
     string       line;
     begin
@@ -1953,6 +1964,32 @@ module tb_hsl_smoke;
       end
       $display("[T13] a start during the other engine's run waits for it: both orders ran and passed, %0d clocks with both busy",
                both_cyc - c0);
+
+      // The request port closed (PHY off, MISSION stays): every engine
+      // refuses its start at once (done, refused, pass 0) instead of waiting
+      // forever for req_ready, and BIRA calls the refused MBIST not repairable.
+      csr_write(CSR_CTRL, BYP);
+      wait_cycles(4);
+      cyc = mb_cyc;
+      csr_write(CSR_LANE_BIST, {16'h0, T13_ROW + 8'd8, 2'b00, T13_BANK, 3'b000, 1'b1});
+      csr_write(CSR_MBIST, {9'h0, 3'd3, 4'd0, T13_ROW, 2'b00, T13_BANK, 1'b0, 2'd2, 1'b1});
+      csr_write(CSR_RDTRAIN, 32'h1);
+      wait_cycles(4);
+      csr_read(CSR_LANE_BIST, lb);
+      csr_read(CSR_MBIST, st);
+      csr_read(CSR_RDTRAIN, rt);
+      csr_write(CSR_BIRA, 32'h1);
+      wait_cycles(4);
+      csr_read(CSR_BIRA, lg);
+      if ((lb[2:0] !== 3'b010) || (lb[21] !== 1'b1) || (st[2:0] !== 3'b010) || (st[9] !== 1'b1) ||
+          (rt[3:0] !== 4'b1010) || (lg[2:0] !== 3'b010) || (mb_cyc != cyc)) begin
+        $display("[T13] closed port: lane BIST %h, MBIST %h, read leveling %h, BIRA %h, MBIST busy %0d clocks",
+                 lb, st, rt, lg, mb_cyc - cyc);
+        t13bad = t13bad + 1;
+      end else begin
+        $display("[T13] request port closed: lane BIST, MBIST and read leveling refuse the start at once (done, refused, pass 0); BIRA calls the refused MBIST not repairable");
+      end
+      arm_mission(32'h0);
 
       $display("[T13] detected: MATS+ %0d/24, March X %0d/24, March C- %0d/24 (reference 13, 17, 24)",
                hits[0], hits[1], hits[2]);
@@ -2595,6 +2632,10 @@ module tb_hsl_smoke;
     integer      gap;
     integer      ok_caps;
     integer      seen;
+    integer      cyc;
+    integer      d_bad;
+    logic [31:0] mst;
+    logic [31:0] lbs;
     logic [31:0] v;
     logic [31:0] st;
     logic [31:0] e0;
@@ -2761,6 +2802,91 @@ module tb_hsl_smoke;
                bb);
       csr_write(CSR_ECC, 32'h8);
       csr_write(CSR_ECC, 32'h0);
+
+      // D: the other trigger sources, each driven by a test engine (no host
+      // requests), and counter clears, which must not count as events.
+      // post = 15: a trigger is taken as soon as the trace is armed.
+      d_bad = 0;
+      // Bank command (4): REFpb reaches bank 2 on its own.
+      csr_write(CSR_TRACE, 32'h1 | (32'd4 << 1) | (32'd15 << 4) | (32'd2 << 8));
+      t16_wait_frozen(st, 400);
+      t16_dump(st, ent, tpos);
+      if ((st[2:1] !== 2'b11) || (tpos < 0) || (ent[tpos][0] !== 1'b1) ||
+          !(((ent[tpos][23:21] != 3'd0) && (ent[tpos][20:19] == 2'd2)) ||
+            ((ent[tpos][10:8] != 3'd0) && (ent[tpos][7:6] == 2'd2)))) begin
+        $display("[T16] bank-command trigger: status %h, trigger entry %0d", st, tpos);
+        d_bad = d_bad + 1;
+      end
+      // MBIST fail (3): DQ pin 5 stuck at 1, MATS+ on 2 words, the r0 reads fail.
+      fault_mask = 10'(1) << 5;
+      fault_val  = fault_mask;
+      t13_zero(1);
+      csr_write(CSR_TRACE, 32'h1 | (32'd3 << 1) | (32'd15 << 4));
+      mbist_run(0, 0, 1, mst, cyc);
+      fault_mask = '0;
+      fault_val  = '0;
+      t16_wait_frozen(st, 400);
+      t16_dump(st, ent, tpos);
+      if ((mst[31:16] == 16'h0) || (st[2:1] !== 2'b11) || (tpos < 0) || (ent[tpos][1:0] !== 2'b11)) begin
+        $display("[T16] MBIST trigger: MBIST %h, status %h, trigger entry %0d", mst, st, tpos);
+        d_bad = d_bad + 1;
+      end
+      // A new MBIST run clears the fail count: not an event.
+      csr_write(CSR_TRACE, 32'h1 | (32'd3 << 1) | (32'd15 << 4));
+      t13_zero(1);
+      mbist_run(0, 0, 1, mst, cyc);
+      csr_read(CSR_TRACE, st);
+      if ((mst[2:0] !== 3'b110) || (st[1] !== 1'b0)) begin
+        $display("[T16] MBIST restart: MBIST %h, trace %h (a clear to 0 fired the trigger)", mst, st);
+        d_bad = d_bad + 1;
+      end
+      // PRBS error (2): PRBS payload without loopback, so each write burst of
+      // a lane BIST run counts; then an ERRCNT clear must not fire.
+      arm_mission(32'h1 << CTRL_PRBS_EN);
+      csr_write(CSR_TRACE, 32'h1 | (32'd2 << 1) | (32'd15 << 4));
+      lane_bist(lbs);
+      t16_wait_frozen(st, 400);
+      t16_dump(st, ent, tpos);
+      if ((st[2:1] !== 2'b11) || (tpos < 0) || (ent[tpos][2] !== 1'b1) || (ent[tpos][0] !== 1'b1)) begin
+        $display("[T16] PRBS trigger: status %h, trigger entry %0d", st, tpos);
+        d_bad = d_bad + 1;
+      end
+      csr_write(CSR_TRACE, 32'h1 | (32'd2 << 1) | (32'd15 << 4));
+      csr_write(CSR_ERRCNT, 32'h0);
+      wait_cycles(8);
+      csr_read(CSR_TRACE, st);
+      if (st[1] !== 1'b0) begin
+        $display("[T16] ERRCNT clear fired the PRBS trigger: %h", st);
+        d_bad = d_bad + 1;
+      end
+      arm_mission(32'h0);
+      // ECC uncorrectable (0): two data bits flipped in the first write burst
+      // of a lane BIST run, read back with ECC on; then an ECC clear.
+      csr_write(CSR_ECC_INJ, 32'h0000_0003);
+      csr_write(CSR_ECC, 32'h3);
+      csr_write(CSR_TRACE, 32'h1 | (32'd0 << 1) | (32'd15 << 4));
+      lane_bist(lbs);
+      t16_wait_frozen(st, 400);
+      t16_dump(st, ent, tpos);
+      if ((st[2:1] !== 2'b11) || (tpos < 0) || (ent[tpos][3] !== 1'b1) || (ent[tpos][0] !== 1'b1)) begin
+        $display("[T16] ECC uncorrectable trigger: status %h, trigger entry %0d", st, tpos);
+        d_bad = d_bad + 1;
+      end
+      csr_write(CSR_TRACE, 32'h1 | (32'd0 << 1) | (32'd15 << 4));
+      csr_write(CSR_ECC, 32'h9);
+      wait_cycles(8);
+      csr_read(CSR_TRACE, st);
+      if (st[1] !== 1'b0) begin
+        $display("[T16] ECC clear fired the uncorrectable trigger: %h", st);
+        d_bad = d_bad + 1;
+      end
+      csr_write(CSR_ECC, 32'h0);
+      csr_write(CSR_ECC_INJ, 32'h0);
+      csr_write(CSR_TRACE, 32'h0);
+      if (d_bad == 0) begin
+        $display("[T16] trigger sources: bank command, MBIST fail, PRBS error and ECC uncorrectable each froze the trace on its flagged entry; an MBIST restart and the ERRCNT and ECC clears fired none");
+      end
+      t16bad = t16bad + d_bad;
 
       if (t16bad == 0) begin
         $display("[T16] PASS");

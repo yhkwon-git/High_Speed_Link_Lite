@@ -19,7 +19,10 @@
 // before it is always full. Triggers: 0 ECC
 // uncorrectable, 1 ECC corrected, 2 PRBS error, 3 MBIST fail, 4 a command to
 // the filter bank, 5 manual (man_trig). Events are seen as their counters
-// moving (the ECC ones a few clocks after the RD on the pins).
+// counting up (the ECC ones a few clocks after the RD on the pins). The
+// counters only count up or clear to 0, so a change to a non-zero value is an
+// event and a clear (ECC clear, ERRCNT clear, an MBIST start) is not. A
+// saturated counter (16'hFFFF) shows no further events.
 // Counters: ACT, RD, WR and REFpb on the pins (16 bit, saturating; clear).
 // MISR: 32-bit signature of the read data to the controller while misr_en:
 // s <= {s[30:0], 1'b0} ^ (s[31] ? 32'h0040_0007 : 0) ^ data, from all ones.
@@ -98,10 +101,10 @@ module hsl_dfd #(
   assign ccmd  = cca[CCA_W-1 -: 3];
   assign cbank = cca[COL_W+1 +: BANK_W];
 
-  assign ev_ce = (ecc_ce_cnt != ce_q);
-  assign ev_ue = (ecc_ue_cnt != ue_q);
-  assign ev_pe = (prbs_err_cnt != pe_q);
-  assign ev_mf = (mb_fail_cnt != mf_q);
+  assign ev_ce = (ecc_ce_cnt != ce_q) && (ecc_ce_cnt != '0);
+  assign ev_ue = (ecc_ue_cnt != ue_q) && (ecc_ue_cnt != '0);
+  assign ev_pe = (prbs_err_cnt != pe_q) && (prbs_err_cnt != '0);
+  assign ev_mf = (mb_fail_cnt != mf_q) && (mb_fail_cnt != '0);
 
   assign cmd_in = ((rcmd != 3'd0) && (!flt_en || (rbank == flt_bank))) ||
                   ((ccmd != 3'd0) && (!flt_en || (cbank == flt_bank)));

@@ -14,8 +14,11 @@
 // every lane sits at RX_DLY_DEF.
 //
 // The BIST goes through the controller, so training runs in MISSION with
-// the PHY on (CTRL.phy_en) and the host quiet, after any lane repair. Read
-// direction only; write leveling is not modeled.
+// the PHY on (CTRL.phy_en) and the host quiet, after any lane repair. A start
+// while the request port is closed (open = 0) is refused: done and refused go
+// high, ok stays 0 and the codes keep their values (it would otherwise wait
+// for a BIST that never runs). Read direction only; write leveling is not
+// modeled.
 // -----------------------------------------------------------------------------
 `default_nettype none
 
@@ -23,6 +26,8 @@ module hsl_rd_train (
   input  wire                                        clk,
   input  wire                                        rst_n,
   input  wire                                        start,
+  input  wire                                        open,      // the request port is open
+  output logic                                       refused,   // the last start found it closed
 
   output logic                                       bist_start,
   input  wire                                        bist_busy,
@@ -82,6 +87,7 @@ module hsl_rd_train (
       busy      <= 1'b0;
       done      <= 1'b0;
       ok        <= 1'b0;
+      refused   <= 1'b0;
       for (li = 0; li < DQ_W; li = li + 1) begin
         cur_lo[li]   <= '0;
         cur_len[li]  <= '0;
@@ -93,11 +99,12 @@ module hsl_rd_train (
       case (st)
         S_IDLE: begin
           if (start) begin
-            st   <= S_KICK;
-            code <= '0;
-            busy <= 1'b1;
-            done <= 1'b0;
-            ok   <= 1'b0;
+            st      <= open ? S_KICK : S_IDLE;
+            code    <= '0;
+            busy    <= open;
+            done    <= !open;
+            ok      <= 1'b0;
+            refused <= !open;
             for (li = 0; li < DQ_W; li = li + 1) begin
               cur_len[li]  <= '0;
               best_lo[li]  <= '0;

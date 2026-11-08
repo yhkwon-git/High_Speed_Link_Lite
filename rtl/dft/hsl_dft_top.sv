@@ -11,6 +11,8 @@
 // runs, or in the same clock as its start, is held and goes when that engine
 // is done; the lane BIST goes first. Read leveling waits for a lane BIST run
 // it kicked, so its start must not be dropped. tp_busy hands the port to them.
+// An engine started while the port is closed (tp_open = 0) refuses the start
+// (refused, done) instead of waiting forever for req_ready.
 // hsl_bira turns the MBIST fail log into a spare row / column allocation, and
 // hsl_repair keeps the repair table (toward the array) and the fuses.
 // -----------------------------------------------------------------------------
@@ -30,6 +32,7 @@ module hsl_dft_top (
 
   // Test request port toward the controller.
   input  wire                        q_empty,
+  input  wire                        tp_open,     // the request port is open (MISSION, phy_en)
   output logic                       tp_busy,
   output logic                       tp_req_valid,
   input  wire                        tp_req_ready,
@@ -43,6 +46,7 @@ module hsl_dft_top (
   input  wire  [hsl_pkg::BANK_W-1:0] lb_bank,
   input  wire  [hsl_pkg::ROW_W-1:0]  lb_row,
   output logic                       lb_busy,
+  output logic                       lb_refused,
   output logic                       lb_done,
   output logic [hsl_pkg::DQ_W-1:0]   lb_lane_err,
   output logic [4:0]                 lb_err_bursts,
@@ -55,6 +59,7 @@ module hsl_dft_top (
   input  wire  [2:0]                 mb_ncl,
   input  wire  [3:0]                 mb_log_sel,
   output logic                       mb_busy,
+  output logic                       mb_refused,
   output logic                       mb_done,
   output logic [15:0]                mb_fail_cnt,
   output logic [hsl_pkg::ADDR_W-1:0] mb_first_addr,
@@ -162,7 +167,9 @@ module hsl_dft_top (
     .bank       (lb_bank),
     .row        (lb_row),
     .q_empty    (q_empty),
+    .open       (tp_open),
     .busy       (lb_busy),
+    .refused    (lb_refused),
     .req_valid  (lb_req_valid),
     .req_ready  (tp_req_ready),
     .req_write  (lb_req_write),
@@ -185,7 +192,9 @@ module hsl_dft_top (
     .nrows_m1   (mb_nrows_m1),
     .ncols_log2 (mb_ncl),
     .q_empty    (q_empty),
+    .open       (tp_open),
     .busy       (mb_busy),
+    .refused    (mb_refused),
     .req_valid  (mb_req_valid),
     .req_ready  (tp_req_ready),
     .req_write  (mb_req_write),
@@ -206,13 +215,15 @@ module hsl_dft_top (
     .rg_row0    (mb_rg_row0)
   );
 
-  // Analysis of the last MBIST run; not while it runs.
+  // Analysis of the last MBIST run; not while it runs. A refused MBIST start
+  // left no log to analyze: BIRA reports it as not repairable, like an
+  // overflowed log.
   hsl_bira #(.LOG_N(MB_LOG_N), .SPR(SPR_N), .SPC(SPC_N)) u_bira (
     .clk      (clk),
     .rst_n    (rst_n),
     .start    (br_start && !mb_busy),
     .log_n    (mb_log_n),
-    .log_ovf  (mb_log_ovf),
+    .log_ovf  (mb_log_ovf || mb_refused),
     .log_keys (mb_log_keys),
     .col_ok   (mb_rg_row0[3:0] == 4'h0),
     .busy     (br_busy),
