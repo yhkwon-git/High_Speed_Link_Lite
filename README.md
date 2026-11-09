@@ -44,7 +44,7 @@ HBM base die는 스택 맨 아래의 로직 다이로, 호스트 SoC와 DRAM cor
 
 | 영역 | 구현 | 위치 |
 | --- | --- | --- |
-| Memory Controller | [Mini DRAM Controller](https://github.com/yhkwon-git/mini-dram-controller) v4 RTL(그 저장소 `44a0bb3`과 같은 파일). 읽기 8 + 쓰기 8 큐, FR-FCFS, 행 · 열 명령 버스에 매 클럭 하나씩, bank group 2 × 2, per-bank refresh와 RFM, posted write, 쓰기 큐 forwarding, in-order 응답 | [`rtl/mc/`](rtl/mc/) |
+| Memory Controller | [Mini DRAM Controller](https://github.com/yhkwon-git/mini-dram-controller) v4 RTL(그 저장소와 같은 파일: 로직은 `44a0bb3`, 헤더 주석은 `422036a`). 읽기 8 + 쓰기 8 큐, FR-FCFS, 행 · 열 명령 버스에 매 클럭 하나씩, bank group 2 × 2, per-bank refresh와 RFM, posted write, 쓰기 큐 forwarding, in-order 응답 | [`rtl/mc/`](rtl/mc/) |
 | PHY digital | DFI 형태 입력(행 · 열 명령, WL 뒤 쓰기 데이터, `rddata_valid`). 행 · 열 CA 핀, 동기 2:1 TX 기어 → 1.6 GHz beat + WDQS, RDQS 캡처 → Gray FIFO, DBI(DC · AC), shift 방식 레인 리페어(spare 핀 1개, 핀마다 2:1 mux), 읽기 레벨링(레인별 지연선 코드 스윕 → eye 중앙), SECDED (39,32) ECC(ECC 핀 2개, 오류 주입, CE · UE 카운터와 첫 오류의 주소 · syndrome, 디코더 self-test), 0–4 tap deskew(블록만) | [`rtl/phy/`](rtl/phy/) |
 | Control | IEEE 1500 방식 시험 포트(WIR · WBY · ID · CSR 접근 WDR), CSR 26개, 트레이닝 FSM(9개 상태, done 펄스 대기), 리셋 동기화기(비동기 assert, 2-FF 동기 deassert), 호스트 · 테스트 엔진 요청 포트 mux | [`rtl/ctrl/`](rtl/ctrl/), [`rtl/top/`](rtl/top/) |
 | DFT / DFD | PRBS7, 병렬 루프백, 16 bit 포화 에러 카운터, 레인 BIST(컨트롤러 요청 포트로 PRBS7 16워드를 쓰고 큐가 빈 뒤 읽어 DQ 레인별 고장 검출), MBIST(같은 포트로 DRAM 배열에 MATS+ · March X · March C-, 실패 워드 로그 16개), BIRA(must-repair + spare 순서 탐색으로 spare row 2 · col 2 할당), repair 표와 fuse(SECDED (39,32), 리셋 뒤 자동 로드), DFD(CA 핀과 이벤트의 trigger trace 16항목, ACT · RD · WR · REFpb 카운터, 읽기 데이터 MISR), STATUS · ERRCNT · REMAP · LANE_BIST · MBIST · BIRA · FUSE 관측점 | [`rtl/dft/`](rtl/dft/) |
@@ -59,7 +59,7 @@ flowchart TB
   ATE(["Tester · 1500 직렬 포트"])
   subgraph TOP["hsl_base_die_lite"]
     CTRL["<b>Control</b><br/>rst_sync · csr · training_fsm · w1500"]
-    MC["<b>Memory Controller</b><br/>mem_ctrl (Mini DRAM Controller v4)<br/>queue 8 + 8 · FR-FCFS · refresh · 800 MHz"]
+    MC["<b>Memory Controller</b><br/>mem_ctrl (Mini DRAM Controller v4)<br/>queue 8 + 8 · FR-FCFS · refresh<br/>clk 800 MHz 목표 · STA 459 MHz"]
     PHY["<b>PHY digital</b><br/>dbi · phy_mis · lane_shift · ecc<br/>rd_train"]
     DFT["<b>DFT / DFD</b><br/>prbs7 · loopback · err_cnt<br/>lane_bist · mbist · bira · repair<br/>dfd: trace · 카운터 · MISR"]
     CDC["<b>clk_phy</b> 1.6 GHz · <b>RDQS</b><br/>tx_gear · RDQS 캡처 · Gray FIFO"]
@@ -96,7 +96,7 @@ hsl_base_die_lite
 ├─ hsl_csr                CSR 26개, ID "HSL1"
 ├─ hsl_training_fsm       RESET → … → MISSION
 ├─ hsl_rd_train           읽기 레벨링: 레인별 지연선 코드 스윕, eye 중앙 (레인 BIST로 판정)
-├─ mem_ctrl               Mini DRAM Controller v4 (그 저장소 44a0bb3과 같은 파일)
+├─ mem_ctrl               Mini DRAM Controller v4 (그 저장소와 같은 파일, 로직은 44a0bb3, 주석은 422036a)
 │  ├─ mc_queue ×2         읽기 8 · 쓰기 8, 큐 안의 나이 행렬, 주소 비교
 │  ├─ mc_xage             두 큐 사이의 나이 (WDRAIN = 0일 때만 씀)
 │  ├─ mc_wdrain           읽기 모드 / 쓰기 배치 (WR_HI 6, WR_LO 2)
@@ -109,7 +109,7 @@ hsl_base_die_lite
 │  ├─ hsl_phy_clk         2배 클럭 (합성 시 빈 쉘, PLL 자리)
 │  ├─ hsl_dbi             DBI-DC · DBI-AC
 │  └─ hsl_phy_mis         CA 핀, TX 기어, RDQS 캡처, 읽기 FIFO
-│     ├─ hsl_lane_shift   shift 방식 레인 리페어 (TX · RX, 핀마다 2:1 mux)
+│     ├─ hsl_lane_shift   shift 방식 레인 리페어 (TX · RX, 핀마다 2:1 mux). ECC 주입 비트용 한 벌 더
 │     ├─ hsl_tx_gear      동기 2:1, 컨트롤러 클럭마다 워드 하나 → beat 두 개
 │     ├─ hsl_cdc_fifo     Gray 포인터, RDQS → clk (쓰기 · 읽기 쪽 리셋 따로)
 │     ├─ hsl_rst_sync     RDQS 쪽 리셋: 비동기 assert, RDQS 2-FF로 deassert
@@ -139,15 +139,15 @@ hsl_deskew                레인별 0–4 tap (블록 테스트만)
 | PHY 읽기 경로는 지연을 고정하지 않고 `rddata_valid`로 알림 | RDQS 캡처와 Gray FIFO 동기화의 지연은 RDQS 위상에 따라 한 클럭쯤 달라진다. 컨트롤러가 `rddata_valid`로 진행 중인 RD를 세므로 순서만 지키면 된다 | 실제 DFI의 `tphy_rdlat` 같은 고정 지연 계약은 없다. 컨트롤러의 읽기 반환 FIFO는 PHY 왕복만큼 깊어야 한다 |
 | Beat-major 데이터 배치 | DBI와 ECC가 한 UI의 바이트를 한 덩어리로 다룬다 | 레인 단위 접근은 비트를 흩어 읽는다 |
 | CSR은 `rst_sync_n`만, 데이터패스는 `rst_sync_n & ~soft_rst` | CSR까지 soft reset에 넣으면 `soft_rst` 비트가 다음 사이클에 스스로 지워진다 | 리셋 도메인이 둘이 된다 |
-| RDQS 도메인 플롭은 RDQS로 해제를 맞춘 자기 리셋 동기화기(`u_rst_rdqs`)를 쓰고, 읽기 FIFO의 쓰기 · 읽기 쪽 리셋을 나눔 | 리셋은 비동기로 걸어도 되지만 해제는 그 플롭의 클럭에 맞아야 recovery · removal을 지킨다. 컨트롤러 클럭에서 맞춘 해제는 RDQS와 위상 관계가 없다 | RDQS가 돌기 전(PHY off)에는 그쪽이 리셋에 머문다(T12가 확인). 이상 클럭 STA에서 그 리셋 핀의 removal이 −0.048 ns다(CTS 뒤 hold 수리 대상). 채널 모델의 RDQS가 계속 돈다는 가정에 기댄다: 실제 RDQS는 읽기 버스트 동안만 토글하므로, 실제 PHY라면 해제를 `clk` 쪽에서 맞추고 DQS gating이 캡처를 여는 구조가 필요하다 |
-| CSR 읽기 데이터를 레지스터로 낸다 | 칩 STA에서 `cfg_addr` → `cfg_rdata` 조합 feedthrough가 입출력 지연(각 0.5 ns)에 걸려 −0.174 ns였다. 블록 경계에 입력 → 출력 조합 경로를 두지 않는다 | 읽기가 한 클럭 늦다. 테스트벤치는 주소를 낸 다음 엣지 뒤에 읽는다 |
+| RDQS 도메인 플롭은 RDQS로 해제를 맞춘 자기 리셋 동기화기(`u_rst_rdqs`)를 쓰고, 읽기 FIFO의 쓰기 · 읽기 쪽 리셋을 나눔 | 리셋은 비동기로 걸어도 되지만 해제는 그 플롭의 클럭에 맞아야 recovery · removal을 지킨다. 컨트롤러 클럭에서 맞춘 해제는 RDQS와 위상 관계가 없다 | RDQS가 돌기 전(PHY off)에는 그쪽이 리셋에 머문다(T12가 확인). 이상 클럭 STA에서 그 리셋 핀의 removal이 −0.048 ns다(`e61e90d`)(CTS 뒤 hold 수리 대상). 채널 모델의 RDQS가 계속 돈다는 가정에 기댄다: 실제 RDQS는 읽기 버스트 동안만 토글하므로, 실제 PHY라면 해제를 `clk` 쪽에서 맞추고 DQS gating이 캡처를 여는 구조가 필요하다 |
+| CSR 읽기 데이터를 레지스터로 낸다 | 칩 STA에서 `cfg_addr` → `cfg_rdata` 조합 feedthrough가 입출력 지연(각 0.5 ns)에 걸려 −0.174 ns였다(`8af801b`에서 고침). 블록 경계에 입력 → 출력 조합 경로를 두지 않는다 | 읽기가 한 클럭 늦다. 테스트벤치는 주소를 낸 다음 엣지 뒤에 읽는다 |
 | CDC: Gray 포인터는 소스 클럭의 플롭에서 넘기고, 크로싱은 false path 대신 `set_max_delay` | 조합 XOR 출력이 넘어가면 여러 비트가 바뀌는 순간의 glitch를 싱크 플롭이 잡을 수 있다. false path는 그 경로의 지연을 타이밍이 보지 않게 만든다 | 포인터 레지스터가 늘고, 제약 값을 클럭 주기와 함께 관리해야 한다 |
 | mission TX 기어는 동기식, RX는 RDQS로 받아 Gray FIFO로만 넘김 | `clk_phy`는 PLL에서 컨트롤러 클럭과 위상이 맞으므로, 워드를 컨트롤러 엣지 반 주기 뒤의 PHY 엣지(E1)에서 받으면 핸드셰이크 없이 매 클럭 한 워드를 고정 지연으로 낸다. RDQS는 위상이 정해지지 않은 클럭이라 FIFO 말고는 넘어가지 않는다 | 이전의 토글 핸드셰이크 기어박스는 3 클럭에 한 워드라 교체했다. E1은 컨트롤러 토글을 PHY 클럭으로 비교해 찾는다(FF 1개) |
 | 레인 리페어는 shift 방식: 고장 핀부터 위쪽 레인을 한 칸씩 spare(RED) 쪽으로 | 핀마다 자기 레인과 아래 레인 중 하나를 고르는 2:1 mux라 배선이 이웃 핀까지만 간다. 치환 방식은 모든 레인에서 spare까지 경로가 필요하다 | 고장 핀 위의 레인 번호와 핀 번호가 어긋난다 → 양 끝(PHY, DRAM)이 같은 설정을 가져야 한다. 모델은 mode register 대신 입력으로 받는다 |
 | 읽기 레벨링: 지연선은 아날로그 모델로 두고 디지털은 코드만 낸다 | 디지털이 책임지는 것은 코드 스윕, 레인별 판정, 가장 긴 통과 구간 찾기, 중앙 선택이다. 지연선과 샘플러는 채널 모델이 코드에 따라 흉내 낸다(창 밖에서는 이웃 UI를 읽음) | 판정에 레인 BIST를 재사용해 코드마다 BIST 한 번(32 코드). 레인당 상태 27 FF. 쓰기 방향 레벨링은 없다 |
 | 레인 BIST는 컨트롤러 요청 포트로 16워드를 쓰고, 큐가 빌 때까지 기다린 뒤 읽음 | 뱅크 타이밍, refresh, 버스 전환은 컨트롤러가 지킨다. 쓰기가 큐에 남은 채 읽으면 컨트롤러가 쓰기 큐에서 바로 답해 링크를 거치지 않으므로, 컨트롤러에 `q_empty`를 내어 그때까지 기다린다. 주소는 CA 핀으로 가므로 16 컬럼을 써도 DQ 고장이 주소에 섞이지 않는다 | BIST 중에는 호스트 포트를 막고 응답을 BIST가 가져가므로, 호스트가 조용하고 응답을 다 받은 상태에서 시작해야 한다. 요청 포트가 닫혀 있으면(MISSION이 아니거나 PHY off) start를 바로 거절한다(done · refused, MBIST와 읽기 레벨링도 같음). DBI 레인 고장은 DBI를 끈 상태에서 양방향 반전이 상쇄돼 데이터에 드러나지 않는다 |
-| MBIST는 컨트롤러를 거쳐 연산을 하나씩 낸다(쓰기 뒤에는 `q_empty` + 4클럭) | 배열 앞에 컨트롤러가 있어야 refresh와 뱅크 타이밍이 지켜진다. 그런데 컨트롤러는 다른 주소의 요청 순서를 바꾸므로, 여러 개를 띄우면 배열이 받는 순서가 March 순서와 달라지고 coupling fault는 aggressor 쓰기가 victim 읽기보다 먼저 닿아야 잡힌다 | 연산당 약 13.2클럭(March C- 64워드 640연산 8,443클럭). 실제 HBM의 MBIST는 core die 쪽에서 배열을 직접 몬다. 이 모델의 MBIST는 base die에서 컨트롤러 경계를 검사하는 위치다 |
-| ECC 검사 비트는 ECC 핀 두 개로 따로 보내고, 디코더 앞에 레지스터 단을 둠 | HBM의 ECC 핀처럼 검사 비트를 데이터 beat 옆에 실어 DRAM에 함께 저장한다. 인코더를 컨트롤러의 쓰기 데이터 경로에 두면 그 경로가 −1.029 ns, 디코더를 읽기 FIFO 바로 뒤에 두면 −0.403 ns였다 | 읽기 지연 한 클럭(열린 row 읽기 9 → 10). RD를 4개까지만 띄우는 컨트롤러에서 연속 읽기 32개가 76 → 97 클럭이 됐다 → `RD_PIPE`를 PHY 왕복에 맞추는 것이 다음 단계 |
+| MBIST는 컨트롤러를 거쳐 연산을 하나씩 낸다(쓰기 뒤에는 `q_empty` + 4클럭) | 배열 앞에 컨트롤러가 있어야 refresh와 뱅크 타이밍이 지켜진다. 그런데 컨트롤러는 다른 주소의 요청 순서를 바꾸므로, 여러 개를 띄우면 배열이 받는 순서가 March 순서와 달라지고 coupling fault는 aggressor 쓰기가 victim 읽기보다 먼저 닿아야 잡힌다 | 연산당 약 13.2클럭(March C- 64워드 640연산 8,443클럭, `ffc073d`). 실제 HBM의 MBIST는 core die 쪽에서 배열을 직접 몬다. 이 모델의 MBIST는 base die에서 컨트롤러 경계를 검사하는 위치다 |
+| ECC 검사 비트는 ECC 핀 두 개로 따로 보내고, 디코더 앞에 레지스터 단을 둠 | HBM의 ECC 핀처럼 검사 비트를 데이터 beat 옆에 실어 DRAM에 함께 저장한다. 인코더를 컨트롤러의 쓰기 데이터 경로에 두면 그 경로가 −1.029 ns, 디코더를 읽기 FIFO 바로 뒤에 두면 −0.403 ns였다(`ffc073d`에서 고침) | 읽기 지연 한 클럭(열린 row 읽기 9 → 10, `ffc073d`). RD를 4개까지만 띄우는 컨트롤러에서 연속 읽기 32개가 76 → 97 클럭이 됐다 → `RD_PIPE`를 PHY 왕복에 맞추는 것이 다음 단계 |
 | repair는 배열 쪽 spare가 하고, base die는 BIST · BIRA · fuse 로드를 맡음 | 실제 HBM에서 spare row · col과 그 치환은 core die 배열 안에 있다. base die가 주소를 바꿔 다른 row로 보내는 방식은 컬럼 spare를 만들 수 없고, 컨트롤러 앞에 조합 논리를 더한다 | repair 표(`rep_tab`)를 배열 모델에 사이드밴드로 넘긴다(읽기 지연 코드 `rx_dly_code`와 같은 꼴). JEDEC PPR 명령 인터페이스는 아니다 |
 | DBI는 DC 방식(beat의 1이 4개를 넘으면 반전)으로 시작하고, AC 방식(직전 UI 대비 DQ 전이가 4개를 넘으면 반전)을 CSR로 고르게 추가 | DC는 high 개수를 줄여 high에서 종단 전류가 흐르는 I/O에 맞다. HBM처럼 종단이 없는 짧은 채널에서는 전이 수가 스위칭 전력과 SSO를 정하므로 AC가 맞다 | AC는 이전 beat의 반전 여부에 묶인 직렬 체인이다 → 원시 beat끼리 전이를 미리 세어 beat당 2:1 mux 하나로 줄임([DBI-AC](#dbi-ac-off--dc--ac-비교)) |
 
@@ -155,7 +155,7 @@ hsl_deskew                레인별 0–4 tap (블록 테스트만)
 
 | 항목 | 값 |
 | --- | --- |
-| DQ / DBI / RED | 8 / 1 / 1 (데이터 핀 10개) |
+| DQ / DBI / RED / ECC | 8 / 1 / 1 / 2 (데이터 핀 10개 + 검사 비트를 싣는 ECC 핀 2개) |
 | 버스트 | BL 4, beat-major (beat 0이 첫 UI) |
 | 뱅크 / row / col | 4 (bank group 2 × 2) / 8 bit / 4 bit. 호스트 주소는 14 bit 워드 주소, XOR 맵(bank = a[5:4] ^ a[7:6]) |
 | 데이터 폭 | 32 bit (`DQ_W × BL`). 컨트롤러 클럭 한 번에 버스트 하나 |
@@ -180,7 +180,7 @@ beats_per_burst = BL ÷ DDR_BITS  = 2   → PHY beat 20 bit (2 UI × 10핀)
 | `0x04` | VERSION | RO | `0x00000400` |
 | `0x08` | CTRL | RW | `soft_rst`, `train_bypass`, `loopback`, `prbs_en`, `dbi_en`, (bit 5 예약, 0으로 읽힘), `dbi_ac`, `phy_en` |
 | `0x0C` | STATUS | RO | `train_state`, `train_done`, `mission_mode`, `soft_rst` 에코 |
-| `0x10` | TRAIN | RW | `[0]` start, `[4:1]` done 펄스, `[15:8]` wait |
+| `0x10` | TRAIN | RW | `[0]` start, `[4:1]` done 펄스, `[15:8]` wait(저장만 하고 FSM은 쓰지 않음) |
 | `0x14` | ERRCNT | RW | 읽기는 카운트, 쓰기는 clear |
 | `0x18` | REMAP | RW | `[0]` enable, `[7:4]` 건너뛸 핀 (0–7 DQ, 8 DBI, 9 이상은 shift 없음) |
 | `0x1C` | TIMING0 | RO | `{tCCD_L, tRAS, tRP, tRCD}`, 컨트롤러 상수 |
@@ -768,7 +768,7 @@ STA가 짚어 RTL을 고친 HSL 경로(모두 800 MHz에서 통과로 바뀜):
 성공하면 `[ALL] PASS`가 찍히고 종료 코드 0으로 끝난다. 소스 순서는 [`sim/filelist.f`](sim/filelist.f)이고, 컨트롤러의 `dram_pkg`가 첫 파일, `hsl_pkg`가 그다음이다.
 
 ```powershell
-# Windows: Icarus Verilog가 PATH에 있으면 그것을, 없으면 WSL의 Verilator를 쓴다
+# Windows: WSL의 Verilator로 돈다. WSL이 없을 때만 Icarus Verilog를 시도한다(이 설계에서 돌려 보지 않은 경로)
 powershell -ExecutionPolicy Bypass -File .\sim\run_smoke.ps1
 ```
 
@@ -803,7 +803,7 @@ rtl/
   include/       hsl_pkg: 파라미터, 핀 · CA 배치, CSR 맵, host_addr (컨트롤러의 XOR 주소 맵)
   top/           hsl_base_die_lite, hsl_rst_sync
   ctrl/          hsl_csr, hsl_training_fsm
-  mc/            dram_pkg, mem_ctrl, mc_* (Mini DRAM Controller v4, 그 저장소 44a0bb3과 같은 파일)
+  mc/            dram_pkg, mem_ctrl, mc_* (Mini DRAM Controller v4, 그 저장소와 같은 파일: 로직 44a0bb3, 주석 422036a)
   phy/           hsl_phy_top, phy_mis, tx_gear, dbi, lane_shift, ecc, rd_train, deskew, cdc_fifo, phy_clk
   dft/           hsl_dft_top, prbs, loopback, err_cnt, lane_bist, mbist, bira, repair,
                  secded_enc · secded_dec, dfd, w1500
@@ -824,7 +824,7 @@ portfolio-deck/  포트폴리오 PDF, PPTX (29쪽, e61e90d 측정)
 | 문서 | 내용 |
 | --- | --- |
 | [00 스터디 맵](docs/00_study_map.md) | 항목별로 볼 파일, 3분 설명, 공개 HBM과 이 모델의 차이 |
-| [01 요구 스펙](docs/01_requirements.md) | 기능 요구 7개, 파라미터, 타이밍, 전력 · 신뢰성 규칙, 수락 조건 |
+| [01 요구 스펙](docs/01_requirements.md) | 기능 요구 12개, 파라미터, 타이밍, 전력 · 신뢰성 규칙, 수락 조건 |
 | [02 아키텍처](docs/02_architecture.md) | 디지털 경계, 클럭 구조 A/B/C 비교, 클럭 식, 컨트롤러와 DFI 형태 경계, 데이터 배치, 리셋 |
 | [03 마이크로아키텍처](docs/03_microarchitecture.md) | 계층, CSR 맵, 트레이닝 상태, 호스트 포트, CA 핀과 PHY beat, 레인 BIST, MBIST, repair, ECC, DFD |
 | [04 검증 계획](docs/04_verification_plan.md) | 검증 계층, 스코어보드와 채널 모델 검사, SMOKE · T1–T17, 통과 규칙 |
