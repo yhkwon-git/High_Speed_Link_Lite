@@ -16,7 +16,9 @@
 // Fuse port: fz_rd with fz_addr returns fz_rdata on the next clock, which is
 // registered before the decoder (the decoder after the port's input delay
 // missed 800 MHz); fz_pgm
-// with fz_addr burns fz_wdata (a fuse bit only goes 0 -> 1).
+// with fz_addr burns fz_wdata (a fuse bit only goes 0 -> 1). Program once: a
+// second program ORs a new codeword into a burned word and breaks it (there
+// is no blank check), so a later repair needs fuse words of its own.
 // Change the table only with the request port quiet.
 // -----------------------------------------------------------------------------
 `default_nettype none

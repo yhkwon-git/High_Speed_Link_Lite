@@ -23,7 +23,12 @@
 //
 // The request port is open in mission mode with the PHY on (CTRL.phy_en):
 // only then do commands reach the pins, and a read sent with the PHY off
-// would never be answered. Change phy_en or loopback with the controller idle.
+// would never be answered. Change loopback with the controller idle. Once
+// the PHY is turned off, soft-reset before turning it on again: the
+// controller keeps refreshing while the PHY is off, its PRE and REFpb never
+// reach the pins, and its bank state stops matching the DRAM's. The soft
+// reset restarts both with every bank closed (CKE low). A real part would
+// enter self-refresh before the PHY stops; the model has no self-refresh.
 //
 // Test engines (lane BIST, MBIST): while one runs it owns the request port.
 // req_ready and rsp_valid to the host are held at 0 and the engine takes every

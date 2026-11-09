@@ -7,6 +7,10 @@
 //
 // CKE, MRS, and WRTRAIN advance after one controller clock.
 // ZQCAL, WRLVL, RDLVL, and DESKEW wait until the matching done pulse.
+// The states are the sequence only: no MRS, ZQ or leveling command goes to
+// the pins. The DRAM side's settings (DBI, lane repair) are channel model
+// inputs that the testbench sets; read leveling runs in MISSION from the CSR
+// (hsl_rd_train).
 // train_wait is retained at the port so the CSR field still has a home;
 // the dwell counter it used to feed is gone.
 //

@@ -26,6 +26,8 @@
 // without failures reads them as 0. The fail log keeps each
 // failing word once, as {row offset, column}, up to LOG_N words; one more
 // sets log_ovf. The repair engine (hsl_bira) reads the whole log (log_keys).
+// A start sets the count (log_n) to 0 but leaves the entries: an entry at
+// log_n or above is from an earlier run.
 // A read's difference is registered when its response comes (S_RWAIT) and
 // logged in the next clock (S_NEXT), which the next operation waits for
 // anyway: the controller's response mux then feeds a register, not the log's

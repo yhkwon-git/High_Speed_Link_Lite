@@ -1641,7 +1641,7 @@ module tb_hsl_smoke;
       fault_mask = '0;
       fault_val  = '0;
 
-      $display("[T12] channel model, whole run: %0d ACT, %0d PRE, %0d RD, %0d WR, %0d REFpb; errors: protocol %0d, timing %0d, read before its write data %0d, WDQS %0d",
+      $display("[T12] channel model, run so far: %0d ACT, %0d PRE, %0d RD, %0d WR, %0d REFpb; errors: protocol %0d, timing %0d, read before its write data %0d, WDQS %0d",
                u_dram.n_act, u_dram.n_pre, u_dram.n_rd, u_dram.n_wr, u_dram.n_refpb,
                u_dram.mis_err, u_dram.tim_err, u_dram.hz_err, u_dram.wdqs_err);
       if ((u_dram.wdqs_err != 0) || (u_dram.mis_err != 0) || (u_dram.tim_err != 0) ||
@@ -3114,6 +3114,17 @@ module tb_hsl_smoke;
     run_t15();
     run_t16();
     run_t17();
+
+    // Channel model checks over the whole run: T12 checks the run up to
+    // itself, and T13-T17 drive the pins too (MBIST, repair, ECC, DFD, 1500).
+    $display("[CH] channel model, whole run: %0d ACT, %0d PRE, %0d RD, %0d WR, %0d REFpb; errors: protocol %0d, timing %0d, read before its write data %0d, WDQS %0d",
+             u_dram.n_act, u_dram.n_pre, u_dram.n_rd, u_dram.n_wr, u_dram.n_refpb,
+             u_dram.mis_err, u_dram.tim_err, u_dram.hz_err, u_dram.wdqs_err);
+    if ((u_dram.wdqs_err != 0) || (u_dram.mis_err != 0) || (u_dram.tim_err != 0) ||
+        (u_dram.hz_err != 0)) begin
+      $display("[CH] channel model errors over the run");
+      errors = errors + 1;
+    end
 
     if (sb_err != 0) begin
       $display("[SB] %0d read mismatches over the run", sb_err);

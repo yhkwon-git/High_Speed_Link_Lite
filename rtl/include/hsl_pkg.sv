@@ -132,7 +132,8 @@ package hsl_pkg;
   // MBIST_LOG write:  [3:0] fail log entry to read back
   // MBIST_LOG read:   [13:0] host address of the first failing read (0 when
   //                   none; a start clears it),
-  //                   [23:16] the selected entry {row offset, column},
+  //                   [23:16] the selected entry {row offset, column}
+  //                   (this run's only below MBIST[8:4]),
   //                   [27:24] its index
   // MBIST_BITS read:  bits that differed in the first failing read (0 when none)
   localparam int MB_LOG_N = 16;
@@ -152,6 +153,8 @@ package hsl_pkg;
   // FUSE read:    [0] busy, [1] loaded, [7:4] corrected words,
   //               [11:8] uncorrectable words, [15:12] entries dropped
   // A fuse word is the entry in [15:0] of 32 data bits, SECDED (39,32).
+  // Program once: there is no blank check, and a second program ORs into the
+  // burned words.
   localparam int SPR_N   = 2;
   localparam int SPC_N   = 2;
   localparam int RT_N    = SPR_N + SPC_N;
