@@ -73,7 +73,7 @@ aggressor와 victim은 다른 워드이고, aggressor가 주소 순서로 victim
 
 - **BIRA** (`hsl_bira`): MBIST 실패 워드 로그로 spare를 고른다. 로그가 넘쳤으면 수리 불가. must-repair(덮이지 않은 실패가 남은 spare col보다 많은 row는 반드시 spare row, 반대도 같음)를 바뀌는 것이 없을 때까지 반복한 뒤, 남은 spare의 순서(최대 16가지)를 차례로 시도한다. 모든 해가 어떤 순서에 해당하므로 해가 있으면 찾는다. greedy 한 번으로는 2 + 2 spare, 5워드 맵에서 63.1%만 고쳤고 순서 탐색은 73.2%(= exhaustive)다(`tb/bira_ref.py`).
 - **soft repair**: BIRA 결과를 repair 표(spare마다 16 bit)에 넣으면 배열이 그 row · col 접근을 spare로 보낸다. 재시험으로 확인한다.
-- **hard repair**: 표를 fuse 워드(SECDED (39,32))로 굽고, 리셋이 풀릴 때마다 디코더로 읽어 표를 채운다. 1 bit 오류는 정정, 2 bit 오류는 그 항목을 버리고 표시한다. 굽지 않은 fuse는 빈 표다.
+- **hard repair**: 표를 fuse 워드(SECDED (39,32))로 굽고, 리셋이 풀릴 때마다 디코더로 읽어 표를 채운다. 1 bit 오류는 정정, 2 bit 오류는 그 항목을 버리고 표시한다. 굽지 않은 fuse는 빈 표다. program은 한 번만: blank check가 없어 다시 구우면 OR로 겹쳐 워드가 깨진다.
 - **다루지 않는 것**: subarray별 spare, 비트 단위 fail bitmap, spare 자체의 고장(spare를 쓰기 전에 시험), JEDEC PPR 명령 순서, fuse 프로그램 조건과 읽기 마진.
 
 ## ECC 시험

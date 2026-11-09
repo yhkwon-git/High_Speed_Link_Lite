@@ -9,7 +9,7 @@ Base die 디지털 한 슬라이스. 메모리 컨트롤러를 base die 안에 �
 ## 기능
 
 1. 리셋 해제 후 트레이닝 시퀀스를 끝내고 PHY를 켜기 전에는 호스트 요청을 받지 않는다.
-2. 트레이닝 순서는 RESET, CKE, MRS, ZQ 대기, write leveling, read leveling, deskew, write training, MISSION이다. read leveling은 레인마다 지연선 코드를 스윕해 통과 구간의 중앙을 고를 수 있어야 한다.
+2. 트레이닝 순서는 RESET, CKE, MRS, ZQ 대기, write leveling, read leveling, deskew, write training, MISSION이다. read leveling은 레인마다 지연선 코드를 스윕해 통과 구간의 중앙을 고를 수 있어야 한다. 이 칩의 FSM은 상태 순서만 두고 MRS · ZQ · leveling 명령은 내지 않는다(DRAM 쪽 설정은 채널 모델 입력, 읽기 레벨링은 MISSION에서 CSR로).
 3. MISSION 이후 워드 주소의 읽기와 쓰기를 받는다. ACT, PRE, refresh 같은 DRAM 명령은 컨트롤러가 스스로 만들고, refresh는 빠뜨리지 않는다.
 4. 요청마다 응답이 하나 있고 요청 순서대로 나온다. 쓰기는 받은 즉시 응답하고(posted), 읽기 응답은 버스트 하나다. 호스트가 `rsp_ready`를 내리면 응답은 기다린다.
 5. 루프백 모드에서는 DRAM 대신 TX 쪽 버스트를 RX로 되돌릴 수 있어야 한다.

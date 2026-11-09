@@ -9,7 +9,7 @@
 | 0 | 전원 · 리셋 | 리셋이 풀리면 fuse 워드 4개가 SECDED 디코더를 지나 repair 표로 자동 로드된다 | `FUSE`: 로드 끝, 정정 불가 0 | 정정 불가가 있으면 그 항목은 버려진다 → fuse bin | T14 B · C |
 | 1 | 접근 | 1500 ID 레지스터, `ID` · `VERSION` CSR | `HSL1`, `0x400` | 접근 불가 bin | T17, SMOKE |
 | 2 | PRBS 비교 회로 | `CTRL`의 `prbs_en` · `loopback`: 루프백이면 비교가 맞고, 끄면 `ERRCNT`가 오름 | 두 경우 모두 기대대로 | 로직 bin | T8 |
-| 3 | 링크 핀 | `LANE_BIST`로 DQ 레인 검사. 한 레인만 실패하면 `REMAP`과 DRAM 쪽 설정 후 재검사 | 재검사 PASS | 두 레인 이상 → 링크 bin | T10 |
+| 3 | 링크 핀 | `LANE_BIST`로 DQ 레인 검사. 한 레인만 실패하면 `REMAP`과 DRAM 쪽 설정(이 칩에는 그 경로가 없어 TB가 채널 모델 입력으로 넣는다. 실제로는 DRAM의 1500 포트) 후 재검사 | 재검사 PASS | 두 레인 이상 → 링크 bin | T10 |
 | 4 | 읽기 레벨링 | `RDTRAIN`: 레인별 지연선 코드 스윕, eye 중앙 | 모든 레인 eye 폭 2 코드 이상 | eye 없음 → 링크 bin | T11 |
 | 5 | ECC 디코더 | `ECC[2]` self-test, 1 bit · 2 bit 주입으로 카운터와 로그 확인 | self-test 78개 PASS, 정정 · 정정 불가가 주입대로 | 로직 bin | T15 |
 | 6 | 배열 | ECC 끈 상태에서 블록(bank 하나, 16 row × 16 col)마다 `MBIST` March C- | 실패 읽기 0 → 9로 | 실패 → 7 | T13 |
@@ -22,6 +22,7 @@
 - 3이 6보다 먼저인 이유: 링크 고장도 MBIST에 실패로 보인다(DQ 핀 stuck-at-1이면 모든 r0 실패, T13). 링크를 먼저 고쳐야 배열 고장과 구분된다.
 - 7의 BIRA는 MBIST 실패 워드 로그(16개)를 읽는다. 한 블록에 실패 워드가 16개를 넘으면 수리 불가로 본다.
 - 3, 4, 6의 엔진은 요청 포트가 닫혀 있으면(MISSION이 아니거나 `phy_en` = 0) start를 거절하고 바로 done을 낸다(`LANE_BIST[21]`, `RDTRAIN[3]`, `MBIST[9]`). pass 0을 고장으로 읽기 전에 거절 비트를 본다. 거절된 MBIST 뒤의 BIRA는 수리 불가를 낸다(T13). 다른 엔진 뒤에서 기다리는 start는 busy와 대기 비트(`LANE_BIST[22]`, `MBIST[10]`)로 읽히므로, done을 폴링해도 지난 실행의 결과를 가져가지 않는다.
+- 단계 사이에 PHY(`CTRL.phy_en`)를 끄면 다시 켜기 전에 soft reset을 한다. 꺼진 동안 컨트롤러 refresh의 PRE · REFpb가 핀에 나가지 않아 컨트롤러와 DRAM의 뱅크 상태가 어긋난다(회귀 끝 `[CH]` 검사가 잡는다).
 
 ## 분류 (bin)
 

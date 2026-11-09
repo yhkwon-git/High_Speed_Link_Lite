@@ -82,7 +82,7 @@ hsl_deskew                 블록 테스트만
 | `0x24` | LANE_BIST | RW | 0 | 쓰기 `[0]` start, `[5:4]` bank, `[15:8]` row. 읽기 `[0]` busy, `[1]` done, `[2]` pass, `[3]` 한 레인만 실패, `[7:4]` 가장 낮은 실패 레인, `[15:8]` DQ 레인별 에러, `[20:16]` 불일치 버스트 수, `[21]` 시작 거절(요청 포트 닫힘: done 1, pass 0), `[22]` 대기(MBIST가 도는 동안 받은 start, busy로 읽고 done · pass 0) |
 | `0x28` | RDTRAIN | RW | 0 | 쓰기 `[0]` start, `[6:4]` 읽어 볼 레인. 읽기 `[0]` busy, `[1]` done, `[2]` 모든 레인에서 eye 찾음, `[3]` 시작 거절, `[6:4]` 레인, `[12:8]` 그 레인의 코드, `[20:16]` eye 시작, `[29:24]` eye 폭 |
 | `0x2C` | MBIST | RW | 0 | 쓰기 `[0]` start, `[2:1]` 알고리즘(0 MATS+, 1 March X, 2 March C-, 3은 2로), `[5:4]` bank, `[15:8]` 첫 row, `[19:16]` row 수 − 1, `[22:20]` log2 컬럼 수(4보다 크면 4). 읽기 `[0]` busy, `[1]` done, `[2]` pass(done이고 실패 0이고 거절 아님), `[3]` 로그 넘침, `[8:4]` 로그의 실패 워드 수, `[9]` 시작 거절, `[10]` 대기(레인 BIST가 도는 동안 받은 start), `[31:16]` 실패 읽기 수(포화) |
-| `0x30` | MBIST_LOG | RW | 0 | 쓰기 `[3:0]` 읽을 로그 항목. 읽기 `[13:0]` 첫 실패 읽기의 호스트 주소, `[23:16]` 그 항목 `{row offset[3:0], col[3:0]}`, `[27:24]` 항목 번호 |
+| `0x30` | MBIST_LOG | RW | 0 | 쓰기 `[3:0]` 읽을 로그 항목. 읽기 `[13:0]` 첫 실패 읽기의 호스트 주소, `[23:16]` 그 항목 `{row offset[3:0], col[3:0]}`(`MBIST[8:4]` 미만만 이번 실행의 것), `[27:24]` 항목 번호 |
 | `0x34` | MBIST_BITS | RO | 0 | 첫 실패 읽기에서 기대값과 다른 비트 |
 | `0x38` | BIRA | RW | 0 | 쓰기 `[0]` start(마지막 MBIST 로그, MBIST가 돌 때는 무시), `[1]` 결과를 repair 표에(수리 가능일 때만), `[2]` 표 비우기. 읽기 `[0]` busy, `[1]` done, `[2]` 수리 가능, `[5:4]` 쓴 spare row 수, `[7:6]` 쓴 spare col 수 |
 | `0x3C` | REPAIR | RW | 0 | 쓰기 `[1:0]` 읽을 표 항목(0 · 1 row spare, 2 · 3 col spare). 읽기 `[15:0]` 항목 `{[15] valid, [13:12] bank, [11:4] row(col spare는 블록 << 4), [3:0] col}`, `[17:16]` 항목 번호 |
@@ -110,7 +110,7 @@ CTRL 비트:
 | 4 | dbi_en | DBI 켬. 규칙은 bit 6 |
 | 5 | (예약) | v0.1의 `phy_bypass`. 0으로 읽힘 |
 | 6 | dbi_ac | 0: DC(beat popcount가 4보다 크면 반전), 1: AC(직전 UI 대비 DQ 전이가 4보다 많으면 반전. beat 0의 기준은 직전 클럭 쓰기 버스트의 마지막 바이트, 없으면 0) |
-| 7 | phy_en | PHY 켬: CK 출력, 명령과 데이터를 핀으로. 요청 포트도 이때만 열림 |
+| 7 | phy_en | PHY 켬: CK 출력, 명령과 데이터를 핀으로. 요청 포트도 이때만 열림. 끈 뒤 다시 켜기 전에는 soft reset(꺼진 동안 컨트롤러 refresh의 PRE · REFpb가 핀에 나가지 않아 뱅크 상태가 어긋남) |
 
 STATUS 비트:
 
@@ -136,6 +136,8 @@ TRAIN 쓰기는 `[0]` start, `[1]` zq_done, `[2]` wrlvl_done, `[3]` rdlvl_done, 
 | 6 | DESKEW | `deskew_done`까지 머무름 |
 | 7 | WRTRAIN | 한 클럭 뒤 MISSION |
 | 8 | MISSION | CKE = 1, `train_done` = 1 |
+
+상태는 순서만이다. MRS · ZQ · leveling 명령은 핀에 내지 않고, DRAM 쪽 설정(DBI, 레인 리페어)은 TB가 채널 모델 입력으로 넣는다. 읽기 레벨링은 MISSION에서 `RDTRAIN`으로 돌린다(RDLVL 상태와는 묶지 않음).
 
 `train_bypass`가 1이면 리셋이 풀린 다음 클럭에 MISSION으로 간다. bypass를 내려도 MISSION에 남는다. `soft_rst`가 리셋을 잡고 있으면 bypass보다 리셋이 우선한다. CKE가 0인 동안 채널 모델은 모든 뱅크를 닫힌 것으로 본다(soft reset 뒤 컨트롤러와 같은 상태).
 
@@ -205,7 +207,7 @@ NEXT: 같은 요소의 두 번째 연산, 다음 워드(요소 방향), 다음 �
 영역은 `MBIST` 쓰기의 bank, 첫 row, row 수, 컬럼 수다. 워드 순서는 row마다 컬럼이 빠르게 돈다(`idx = row offset × 2^ncl + col`). 주소는 `host_addr(bank, row0 + row offset, col)`로 만들어 요청 포트에 낸다. 요소 표는 `{last, down, two, op0, op1}` 7 bit이고 연산은 `{write, value}`다.
 
 - **순서**: 연산을 하나씩 낸다. 컨트롤러는 다른 주소의 요청 순서를 바꾸므로, March 순서를 배열에 그대로 전하려면 앞 연산이 배열에 닿은 뒤 다음을 낸다. 쓰기는 posted 응답 뒤 `q_empty`(WR이 핀으로 나감)와 4클럭(WL과 TX 기어를 지나 배열에 닿음)을, 읽기는 응답을 기다린다.
-- **기록**: 읽기 응답과 기대값의 차이(`diff_q`)를 RWAIT에서 레지스터로 받고, NEXT에서 실패 읽기마다 `fail_cnt`(16 bit 포화)를 센다. 첫 실패는 주소와 다른 비트를 남긴다(start가 지우므로 실패가 없는 실행은 0). 로그는 실패 워드를 `{row offset, col}`로 최대 16개, 같은 워드는 한 번만(16개 비교) 넣고, 17번째 새 워드부터는 `log_ovf`를 세운다.
+- **기록**: 읽기 응답과 기대값의 차이(`diff_q`)를 RWAIT에서 레지스터로 받고, NEXT에서 실패 읽기마다 `fail_cnt`(16 bit 포화)를 센다. 첫 실패는 주소와 다른 비트를 남긴다(start가 지우므로 실패가 없는 실행은 0). 로그는 실패 워드를 `{row offset, col}`로 최대 16개, 같은 워드는 한 번만(16개 비교) 넣고, 17번째 새 워드부터는 `log_ovf`를 세운다. start는 개수(`log_n`)만 0으로 하고 항목은 지우지 않는다: `log_n` 이상의 항목은 지난 실행의 것이다.
 - **포트 공유**: `hsl_dft_top`이 레인 BIST와 MBIST를 한 테스트 포트(`tp_*`)로 묶는다. 한 번에 하나만 돌고, 다른 엔진이 도는 동안 또는 같은 클럭에 온 start는 잡아 두었다가 포트가 비면 낸다(레인 BIST 우선). 읽기 레벨링이 자기가 낸 레인 BIST의 busy를 기다리므로 start를 버리지 않는다. 기다리는 동안 CSR은 그 엔진을 busy와 대기 비트로 읽게 하고 done · pass를 0으로 둔다(엔진의 done은 start가 실제로 들어갈 때 지워지므로). 읽기 레벨링은 엔진 자신의 busy를 그대로 본다.
 - **타이밍**: 요청 출력(`req_addr`, `req_write`, `req_wdata`)은 플롭이다. 조합 주소(가변 shift, 덧셈, XOR 맵)가 컨트롤러의 주소 비교 앞에 붙으면 칩 STA에서 −0.749 ns였다. 응답 쪽도 컨트롤러 응답 FIFO → 비교 → 로그 중복 검사가 한 클럭이면 −0.099 ns여서, 차이를 레지스터로 받고 다음 클럭에 기록한다(`3d596a4`).
 
@@ -223,6 +225,7 @@ FUSE:   리셋 뒤 / load: READ (fz_rd) --> TAKE (fz_rdata 레지스터) --> DEC
 - BIRA는 MBIST 로그 전체(`log_keys`, 항목 16 × 8 bit)와 마지막 영역(bank, 첫 row)을 받는다. 거절된 MBIST는 넘친 로그처럼 수리 불가로 본다(`log_ovf || refused`). col spare는 영역의 첫 row가 16-row 블록 경계일 때만 쓴다.
 - spare 슬롯은 쓴 순서대로 채운다(row 0 → 1, col 0 → 1). 순서 `ord`의 bit t가 1이면 t번째로 쓰는 spare가 row다. 남은 spare 수 L에 대해 bit L 이상이 0이고 1의 개수가 남은 row 수인 순서만 시도한다.
 - repair 표는 데이터패스 리셋에 들어 있다. soft reset도 표를 비우고, 이어서 fuse 로드가 다시 채운다.
+- fuse program은 한 번만 한다. blank check가 없어 이미 구운 워드에 다시 구우면 새 부호어가 OR로 겹쳐 워드가 깨진다.
 - fuse 포트: `fz_rd`와 `fz_addr` 다음 클럭에 `fz_rdata`. `fz_pgm`은 `fz_wdata`를 OR로 굽는다. SECDED (39,32)는 확장 Hamming이다. 비트 0이 전체 패리티이고, 위치 2^k(1, 2, 4, 8, 16, 32)가 체크 비트, 나머지 32개가 데이터다. 항목은 데이터 `[15:0]`에 들어간다.
 
 ## ECC
