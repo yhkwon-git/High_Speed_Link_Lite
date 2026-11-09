@@ -84,7 +84,7 @@ flowchart TB
 - **명령**: 스케줄러가 매 클럭 행 명령(ACT · PRE · REFpb) 하나와 열 명령(RD · WR) 하나를 고른다. PHY는 한 클럭 뒤 `pin_rca = {cmd, bank, row}`, `pin_cca = {cmd, bank, col, ap}`로 내고, 코드는 컨트롤러의 `dram_cmd_e` 그대로다. 열 명령은 row를 싣지 않고 그 뱅크의 열린 row를 쓴다
 - **쓰기 데이터**: WR 뒤 WL(1) 클럭에 `wrdata_en` → DBI(DC 또는 AC) → 레인 shift(4 심볼) → 동기 2:1 TX 기어 → `clk_phy` beat 두 개(beat당 2 UI × 10핀)와 WDQS
 - **읽기 데이터**: RDQS(= CK + tDQSCK)로 beat 두 개를 받아 Gray FIFO로 컨트롤러 클럭에 넘기고, shift 복원과 DBI 복원 뒤 `rddata_valid`. 지연을 고정하지 않아도 컨트롤러가 `rddata_valid`로 진행 중인 RD를 센다. 루프백이 켜져 있으면 RD를 핀으로 내지 않고 마지막 쓰기 버스트(`lb_hold`)로 답한다
-- **포트**: 요청 포트는 MISSION이면서 PHY가 켜져 있을 때(`CTRL.phy_en`)만 열린다. CK는 PHY가 켜져 있을 때만 `pin_ck`로 나간다. 레인 BIST나 MBIST가 도는 동안은 그 엔진이 포트를 쓰고 응답을 모두 가져간다(한 번에 하나). deskew는 아직 경로에 없고 블록 테스트만 한다
+- **포트**: 요청 포트는 MISSION이면서 PHY가 켜져 있을 때(`CTRL.phy_en`)만 열린다. CK는 PHY가 켜져 있을 때만 `pin_ck`로 나간다. PHY를 끈 뒤에는 soft reset을 거쳐 다시 켠다(꺼진 동안 컨트롤러 refresh가 핀에 나가지 않는다, [한계](#한계와-다음-단계)). 레인 BIST나 MBIST가 도는 동안은 그 엔진이 포트를 쓰고 응답을 모두 가져간다(한 번에 하나). deskew는 아직 경로에 없고 블록 테스트만 한다
 
 <details>
 <summary>모듈 계층 (35개 모듈 + 패키지 2개)</summary>
@@ -838,9 +838,9 @@ portfolio-deck/  포트폴리오 PDF, PPTX (29쪽, e61e90d 측정)
 
 알려진 한계:
 
-- 컨트롤러는 RD를 4개까지만 띄우는데, 이 PHY에서는 RD 하나가 슬롯을 오래 잡아(낸 클럭부터 data_valid까지 8 클럭, ECC 단계 전에는 7) 연속 읽기 대역이 절반 아래로 묶인다(읽기 32개 97 클럭)
-- 컨트롤러가 Nangate45에서 459 MHz(2.18 ns)에서 닫혀 800 MHz 컨트롤러 클럭을 닫지 못한다. 한 클럭에 명령을 고르고 타이머를 갱신하는 루프 때문이며, DFI 1 : 2 주파수 비율이 맞는 방향이다([STA](#sta-세-클럭과-cdc)). 호스트 입력 → `req_ready`도 컨트롤러 안에서 조합으로 이어진다
-- STA는 이상 클럭, 배선 없음, typical 한 코너다. hold는 CTS 뒤에 다시 봐야 하고(지금 removal 최악 −0.048 ns, RDQS 쪽 리셋 핀), 리셋 트리는 스크립트가 넣은 버퍼 트리로 대신했다
+- 컨트롤러는 RD를 4개까지만 띄우는데, 이 PHY에서는 RD 하나가 슬롯을 오래 잡아(낸 클럭부터 data_valid까지 8 클럭, ECC 단계 전에는 7) 연속 읽기 대역이 절반 아래로 묶인다(읽기 32개 97 클럭, `ffc073d`)
+- 컨트롤러가 Nangate45에서 459 MHz(2.18 ns, `e61e90d`)에서 닫혀 800 MHz 컨트롤러 클럭을 닫지 못한다. 한 클럭에 명령을 고르고 타이머를 갱신하는 루프 때문이며, DFI 1 : 2 주파수 비율이 맞는 방향이다([STA](#sta-세-클럭과-cdc)). 호스트 입력 → `req_ready`도 컨트롤러 안에서 조합으로 이어진다
+- STA는 이상 클럭, 배선 없음, typical 한 코너다. hold는 CTS 뒤에 다시 봐야 하고(`e61e90d`의 removal 최악 −0.048 ns, RDQS 쪽 리셋 핀), 리셋 트리는 스크립트가 넣은 버퍼 트리로 대신했다
 - PHY 읽기 경로에 고정 지연 계약(DFI `tphy_rdlat`)이 없다. 컨트롤러가 `rddata_valid`로 순서만 맞춘다
 - PHY(`phy_en`)는 진행 중인 RD가 없을 때 끄고(끄면 답을 받지 못한다), 다시 켜기 전에 soft reset을 한다. 컨트롤러가 idle이어도 refresh는 계속 PRE · REFpb를 내는데, PHY가 꺼진 동안 그 명령은 핀에 나가지 않아 컨트롤러와 DRAM의 뱅크 상태가 어긋나고 DRAM은 refresh를 받지 못한다(row를 연 채 300클럭 끈 뒤 켜면 열린 뱅크에 ACT). soft reset은 둘을 모든 뱅크가 닫힌 상태로 다시 시작시킨다(채널 모델은 CKE low에서 뱅크를 닫는다). 실제 칩이면 PHY를 멈추기 전에 DRAM을 self-refresh에 넣어야 하고, 이 모델에는 self-refresh가 없다
 - 루프백은 컨트롤러가 idle일 때만 바꿔야 한다. 루프백 RD는 핀에 CA를 내지 않으므로 auto-precharge(close page)와 함께 쓰면 DRAM 쪽 뱅크 상태가 어긋난다. 기본값인 open page에서만 쓴다
@@ -850,7 +850,7 @@ portfolio-deck/  포트폴리오 PDF, PPTX (29쪽, e61e90d 측정)
 - 레인 BIST는 DQ 8레인만 진단한다. DBI 핀 고장은 DBI를 끈 상태에서 양방향 반전이 상쇄돼 데이터에 드러나지 않는다(경계 스캔 방식의 핀 테스트가 필요하다. 1500 포트에는 아직 WBR이 없다)
 - 레인 BIST와 MBIST는 컨트롤러를 거치므로 호스트가 조용하고 응답을 다 받은 상태에서 시작해야 한다. 칩은 엔진이 도는 동안 호스트 포트를 막을 뿐 그 조건을 검사하지 않는다. 요청 포트가 닫힌 채 시작하면 엔진이 바로 거절하지만, 도는 중에 포트가 닫히면(PHY off) 엔진이 응답을 기다린 채 남아 soft reset으로 풀어야 한다
 - MBIST는 solid background와 비트 단위 고장만 본다. 한 워드 안 비트 사이의 coupling(intra-word), 이웃 셀 패턴 고장, 데이터 보존(retention)은 checkerboard · 보존 대기 같은 배경과 요소가 더 필요하다. 영역은 bank 하나, 최대 16 × 16 워드다
-- MBIST는 연산을 하나씩 내므로 느리다(연산당 약 13.2클럭). 실제 배열 MBIST는 core die에서 컨트롤러 없이 배열을 직접 몬다
+- MBIST는 연산을 하나씩 내므로 느리다(연산당 약 13.2클럭, `ffc073d`). 실제 배열 MBIST는 core die에서 컨트롤러 없이 배열을 직접 몬다
 - spare는 칩 전체에 row 2 · col 2뿐이고, col spare는 16-row 블록 하나에만 걸린다(MBIST 영역이 블록 경계에서 시작해야 col을 쓴다). BIRA는 실패 워드 로그(워드 단위, 16개)만 보므로 넘치면 수리 불가로 본다. 실제 배열은 subarray마다 spare가 있고 비트 단위 bitmap을 쓴다
 - ECC 핀은 DBI와 레인 리페어 밖이다. 정정 불가 오류는 CSR로만 알리고 호스트 응답(`rsp_err`)에는 실리지 않는다(컨트롤러의 DFI 쪽에 오류 입력이 없음). SECDED라 3 bit 이상 오류는 잘못 정정될 수 있다. ECC enable은 컨트롤러가 idle일 때 바꾸고, 켜기 전에 쓴 데이터는 검사 비트가 없다
 - 1500 포트는 WRCK를 clk로 오버샘플하므로 WRCK가 clk의 1/8 이하여야 하고, WBR · EXTEST가 없다
@@ -862,7 +862,7 @@ portfolio-deck/  포트폴리오 PDF, PPTX (29쪽, e61e90d 측정)
 
 - [x] mission 데이터패스: 행 · 열 CA 핀, 동기 TX 기어 + WDQS, RDQS 캡처 + Gray FIFO (T12, 이슈 C)
 - [x] Mini DRAM Controller v4를 DFI 형태로 붙여 in-order MC를 교체: FR-FCFS, refresh 발행과 tRFC, 핀 검사와 스코어보드 (T2–T4, `0193c04`)
-- [x] Random traffic과 스코어보드로 toggle 커버리지 올리기 (T3, 56.6 → 83.7%)
+- [x] Random traffic과 스코어보드로 toggle 커버리지 올리기 (T3, `0193c04`에서 56.6 → 83.4%. DFT · DFD를 더한 지금은 80.2%, `e61e90d`)
 - [x] DBI-AC 모드와 off / DC / AC 전이 비교, DBI 읽기 경로 검증(T9)
 - [x] shift 방식 레인 리페어와 레인 BIST: 검출 → 재매핑 → 재검사(T10)
 - [x] 읽기 레벨링: 레인별 지연선 코드 스윕과 eye 중앙(T11)
