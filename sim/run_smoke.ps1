@@ -29,10 +29,13 @@ function Invoke-WslVerilator {
   exit $LASTEXITCODE
 }
 
-if (Get-Command iverilog -ErrorAction SilentlyContinue) {
-  Invoke-Icarus
-} elseif (Get-Command wsl -ErrorAction SilentlyContinue) {
+# Checked flows: Verilator 5.052 in WSL (here) and ModelSim-Altera 10.1d (README).
+# Icarus Verilog has not been run on this design; it is tried only without WSL.
+if (Get-Command wsl -ErrorAction SilentlyContinue) {
   Invoke-WslVerilator
+} elseif (Get-Command iverilog -ErrorAction SilentlyContinue) {
+  Write-Warning "No WSL: trying Icarus Verilog, which has not been checked on this design."
+  Invoke-Icarus
 } else {
-  Write-Error "No simulator found. Install Icarus Verilog, or use WSL with Verilator. Sources are listed in sim/filelist.f."
+  Write-Error "No simulator found. Use WSL with Verilator 5.x, or ModelSim (commands in README). Sources are listed in sim/filelist.f."
 }
