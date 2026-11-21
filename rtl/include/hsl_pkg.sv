@@ -1,8 +1,8 @@
 `timescale 1ns/100fs
-// High-Speed Link Lite
+// High_Speed_Link_Lite
 // Study-scale digital model of an HBM-style base-die link.
 // Parameters below are project choices, not JEDEC values.
-// The memory controller is Mini DRAM Controller v4 (rtl/mc/, dram_pkg); its
+// The memory controller is Mini_DRAM_Controller v4 (rtl/mc/, dram_pkg); its
 // geometry and timing come from dram_pkg, which is compiled first.
 package hsl_pkg;
   import dram_pkg::*;

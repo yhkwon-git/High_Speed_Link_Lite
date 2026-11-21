@@ -9,7 +9,7 @@ hsl_base_die_lite
   hsl_csr
   hsl_training_fsm
   hsl_rd_train
-  mem_ctrl                 Mini DRAM Controller v4 (rtl/mc, 그 저장소와 같은 파일: 로직 44a0bb3, 헤더 주석 422036a)
+  mem_ctrl                 Mini_DRAM_Controller v4 (rtl/mc, 그 저장소와 같은 파일: 로직 44a0bb3, 헤더 주석 406c18d)
     mc_queue x2            읽기 8, 쓰기 8
     mc_xage
     mc_wdrain

@@ -1,6 +1,6 @@
 `timescale 1ns/100fs
 // Block-level checks for E4, E7, E8, E9, E10, the PRBS seed rule, and DBI.
-// The controller (rtl/mc) has its own regression in the Mini DRAM Controller
+// The controller (rtl/mc) has its own regression in the Mini_DRAM_Controller
 // repo; here it is tested in the chip (tb_hsl_smoke T2, T3).
 `default_nettype none
 

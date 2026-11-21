@@ -1,4 +1,4 @@
-// Mini-DRAM package: geometry, bank groups, timing, commands, policies, address maps (docs/spec.md).
+// Mini_DRAM_Controller package: geometry, bank groups, timing, commands, policies, address maps (docs/spec.md).
 `timescale 1ns/1ps
 
 package dram_pkg;

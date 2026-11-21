@@ -1,4 +1,4 @@
-// Chip-level tests. The memory controller is Mini DRAM Controller v4: a host
+// Chip-level tests. The memory controller is Mini_DRAM_Controller v4: a host
 // request port with posted writes and in-order responses.
 //   SMOKE  CSRs, reset values, the request port (closed without the PHY,
 //          15 response tags, soft reset)

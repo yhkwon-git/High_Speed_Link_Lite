@@ -1,6 +1,6 @@
 <div align="center">
 
-# High-Speed Link Lite
+# High_Speed_Link_Lite
 
 **HBM Base Die 디지털 링크를 한 채널 슬라이스로 축소한 SystemVerilog RTL 설계**<br>
 Spec → Architecture → RTL → Verification → PD Guide
@@ -9,9 +9,9 @@ Spec → Architecture → RTL → Verification → PD Guide
 [![Sim](https://img.shields.io/badge/Sim-Verilator%205.052%20%C2%B7%20ModelSim%2010.1d-2ea44f)](sim/)
 [![Synth](https://img.shields.io/badge/Synth-Yosys%200.52-8250df)](syn/)
 
-**[📄 포트폴리오 PDF (29쪽)](portfolio-deck/HighSpeedLinkLite_Portfolio.pdf)** · [PPTX](portfolio-deck/HighSpeedLinkLite_Portfolio.pptx) · [스터디 맵](docs/00_study_map.md)
+**[📄 포트폴리오 PDF (29쪽)](portfolio-deck/High_Speed_Link_Lite_Portfolio.pdf)** · [PPTX](portfolio-deck/High_Speed_Link_Lite_Portfolio.pptx) · [스터디 맵](docs/00_study_map.md)
 
-<a href="portfolio-deck/HighSpeedLinkLite_Portfolio.pdf"><img src="portfolio-deck/cover.png" width="760" alt="포트폴리오 표지. 클릭하면 PDF가 열립니다"></a>
+<a href="portfolio-deck/High_Speed_Link_Lite_Portfolio.pdf"><img src="portfolio-deck/cover.png" width="760" alt="포트폴리오 표지. 클릭하면 PDF가 열립니다"></a>
 
 </div>
 
@@ -23,7 +23,7 @@ Spec → Architecture → RTL → Verification → PD Guide
 | RTL 35개 모듈<br>4,676줄 (주석 제외) | SMOKE · T1–T17<br>E7 · E9 · E11 | Toggle 80.2% | Nangate45<br>배선 없음 | 800 MHz · 1.6 GHz<br>RDQS · CDC |
 
 > [!NOTE]
-> 표와 아래 결과는 commit `e61e90d` 기준이다(Verilator 5.052, ModelSim-Altera 10.1d 모두 23/23 PASS). `5a24f07`은 TB에 회귀 종료 시 채널 모델 검사를 추가하고 주석만 수정해 결과가 동일하다. `0193c04`에서 메모리 컨트롤러를 [Mini DRAM Controller](https://github.com/yhkwon-git/mini-dram-controller) v4로 교체해 PHY와 DFI 형태로 연결하고 저속 bypass framer를 제거했으며, `8af801b`에서 칩 STA(세 클럭과 CDC)를 추가하고 STA가 지적한 HSL 경로를 수정했으며, `f018966`에서 DRAM 배열의 March MBIST를, `6c29d60`에서 그 실패 로그로 spare를 할당하는 BIRA와 fuse repair를, `ffc073d`에서 ECC 핀 2개를 사용하는 데이터 SECDED를, `796d969`에서 trace buffer · 명령 카운터 · MISR(DFD)과 디버그 사례를, `14fec6e`에서 CSR 전체에 접근하는 IEEE 1500 방식 시험 포트를 추가했고, `3d596a4`에서 리뷰 지적 3건(DFD가 카운터 clear를 이벤트로 판정한 문제, RDQS 도메인 리셋 해제의 동기화, 요청 포트 close 상태에서 시작한 시험 엔진)을, `e61e90d`에서 재검토 지적 4건(다른 엔진 뒤에서 대기하는 start의 CSR 표시, Gray 포인터 최상위 비트의 CDC 제약, MBIST 첫 실패 기록의 초기화, 거절된 읽기 레벨링의 결과 보존)을, `5a24f07`에서 3차 검토 지적 2건(T12에서만 확인하던 채널 모델 오류 검사를 회귀 종료 시점으로 이동, PHY off → on 시 soft reset 규칙)을 수정했다. 절마다 표기한 commit은 해당 수치의 측정 commit이다. PDF는 2–20쪽과 23–28쪽이 이 칩(`e61e90d`) 기준이며 페이지마다 측정 commit을 표기했고, 21–22쪽은 DBI-AC와 리뷰 수정의 당시 기록이다.
+> 표와 아래 결과는 commit `e61e90d` 기준이다(Verilator 5.052, ModelSim-Altera 10.1d 모두 23/23 PASS). `5a24f07`은 TB에 회귀 종료 시 채널 모델 검사를 추가하고 주석만 수정해 결과가 동일하다. `0193c04`에서 메모리 컨트롤러를 [Mini_DRAM_Controller](https://github.com/yhkwon-git/Mini_DRAM_Controller) v4로 교체해 PHY와 DFI 형태로 연결하고 저속 bypass framer를 제거했으며, `8af801b`에서 칩 STA(세 클럭과 CDC)를 추가하고 STA가 지적한 HSL 경로를 수정했으며, `f018966`에서 DRAM 배열의 March MBIST를, `6c29d60`에서 그 실패 로그로 spare를 할당하는 BIRA와 fuse repair를, `ffc073d`에서 ECC 핀 2개를 사용하는 데이터 SECDED를, `796d969`에서 trace buffer · 명령 카운터 · MISR(DFD)과 디버그 사례를, `14fec6e`에서 CSR 전체에 접근하는 IEEE 1500 방식 시험 포트를 추가했고, `3d596a4`에서 리뷰 지적 3건(DFD가 카운터 clear를 이벤트로 판정한 문제, RDQS 도메인 리셋 해제의 동기화, 요청 포트 close 상태에서 시작한 시험 엔진)을, `e61e90d`에서 재검토 지적 4건(다른 엔진 뒤에서 대기하는 start의 CSR 표시, Gray 포인터 최상위 비트의 CDC 제약, MBIST 첫 실패 기록의 초기화, 거절된 읽기 레벨링의 결과 보존)을, `5a24f07`에서 3차 검토 지적 2건(T12에서만 확인하던 채널 모델 오류 검사를 회귀 종료 시점으로 이동, PHY off → on 시 soft reset 규칙)을 수정했다. 절마다 표기한 commit은 해당 수치의 측정 commit이다. PDF는 2–20쪽과 23–28쪽이 이 칩(`e61e90d`) 기준이며 페이지마다 측정 commit을 표기했고, 21–22쪽은 DBI-AC와 리뷰 수정의 당시 기록이다.
 
 ## 개요
 
@@ -42,7 +42,7 @@ HBM base die는 스택 맨 아래의 로직 다이로, 호스트 SoC와 DRAM cor
 
 | 영역 | 구현 | 위치 |
 | --- | --- | --- |
-| Memory Controller | [Mini DRAM Controller](https://github.com/yhkwon-git/mini-dram-controller) v4 RTL(원 저장소와 동일 파일: 로직은 `44a0bb3`, 헤더 주석은 `422036a`). 읽기 8 + 쓰기 8 큐, FR-FCFS, 행 · 열 명령 버스에 매 클럭 각 1개, bank group 2 × 2, per-bank refresh와 RFM, posted write, 쓰기 큐 forwarding, in-order 응답 | [`rtl/mc/`](rtl/mc/) |
+| Memory Controller | [Mini_DRAM_Controller](https://github.com/yhkwon-git/Mini_DRAM_Controller) v4 RTL(원 저장소와 동일 파일: 로직은 `44a0bb3`, 헤더 주석은 `406c18d`). 읽기 8 + 쓰기 8 큐, FR-FCFS, 행 · 열 명령 버스에 매 클럭 각 1개, bank group 2 × 2, per-bank refresh와 RFM, posted write, 쓰기 큐 forwarding, in-order 응답 | [`rtl/mc/`](rtl/mc/) |
 | PHY digital | DFI 형태 입력(행 · 열 명령, WL 뒤 쓰기 데이터, `rddata_valid`). 행 · 열 CA 핀, 동기 2:1 TX 기어 → 1.6 GHz beat + WDQS, RDQS 캡처 → Gray FIFO, DBI(DC · AC), shift 방식 레인 리페어(spare 핀 1개, 핀마다 2:1 mux), 읽기 레벨링(레인별 지연선 코드 스윕 → eye 중앙), SECDED (39,32) ECC(ECC 핀 2개, 오류 주입, CE · UE 카운터와 첫 오류의 주소 · syndrome, 디코더 self-test), 0–4 tap deskew(블록만) | [`rtl/phy/`](rtl/phy/) |
 | Control | IEEE 1500 방식 시험 포트(WIR · WBY · ID · CSR 접근 WDR), CSR 26개, 트레이닝 FSM(9개 상태, done 펄스 대기), 리셋 동기화기(비동기 assert, 2-FF 동기 deassert), 호스트 · 테스트 엔진 요청 포트 mux | [`rtl/ctrl/`](rtl/ctrl/), [`rtl/top/`](rtl/top/) |
 | DFT / DFD | PRBS7, 병렬 루프백, 16 bit 포화 에러 카운터, 레인 BIST(컨트롤러 요청 포트로 PRBS7 16워드를 쓰고 큐 empty 후 읽어 DQ 레인별 고장 검출), MBIST(동일 포트로 DRAM 배열에 MATS+ · March X · March C-, 실패 워드 로그 16개), BIRA(must-repair + spare 순서 탐색으로 spare row 2 · col 2 할당), repair 표와 fuse(SECDED (39,32), 리셋 뒤 자동 로드), DFD(CA 핀과 이벤트의 trigger trace 16항목, ACT · RD · WR · REFpb 카운터, 읽기 데이터 MISR), STATUS · ERRCNT · REMAP · LANE_BIST · MBIST · BIRA · FUSE 관측점 | [`rtl/dft/`](rtl/dft/) |
@@ -57,7 +57,7 @@ flowchart TB
   ATE(["Tester · 1500 직렬 포트"])
   subgraph TOP["hsl_base_die_lite"]
     CTRL["<b>Control</b><br/>rst_sync · csr · training_fsm · w1500"]
-    MC["<b>Memory Controller</b><br/>mem_ctrl (Mini DRAM Controller v4)<br/>queue 8 + 8 · FR-FCFS · refresh<br/>clk 800 MHz 목표 · STA 459 MHz"]
+    MC["<b>Memory Controller</b><br/>mem_ctrl (Mini_DRAM_Controller v4)<br/>queue 8 + 8 · FR-FCFS · refresh<br/>clk 800 MHz 목표 · STA 459 MHz"]
     PHY["<b>PHY digital</b><br/>dbi · phy_mis · lane_shift · ecc<br/>rd_train"]
     DFT["<b>DFT / DFD</b><br/>prbs7 · loopback · err_cnt<br/>lane_bist · mbist · bira · repair<br/>dfd: trace · 카운터 · MISR"]
     CDC["<b>clk_phy</b> 1.6 GHz · <b>RDQS</b><br/>tx_gear · RDQS 캡처 · Gray FIFO"]
@@ -94,7 +94,7 @@ hsl_base_die_lite
 ├─ hsl_csr                CSR 26개, ID "HSL1"
 ├─ hsl_training_fsm       RESET → … → MISSION
 ├─ hsl_rd_train           읽기 레벨링: 레인별 지연선 코드 스윕, eye 중앙 (레인 BIST로 판정)
-├─ mem_ctrl               Mini DRAM Controller v4 (원 저장소와 동일 파일, 로직은 44a0bb3, 주석은 422036a)
+├─ mem_ctrl               Mini_DRAM_Controller v4 (원 저장소와 동일 파일, 로직은 44a0bb3, 주석은 406c18d)
 │  ├─ mc_queue ×2         읽기 8 · 쓰기 8, 큐 안의 나이 행렬, 주소 비교
 │  ├─ mc_xage             두 큐 사이의 나이 (WDRAIN = 0일 때만 씀)
 │  ├─ mc_wdrain           읽기 모드 / 쓰기 배치 (WR_HI 6, WR_LO 2)
@@ -133,7 +133,7 @@ hsl_deskew                레인별 0–4 tap (블록 테스트만)
 | 결정 | 이유 | 대가와 후속 조치 |
 | --- | --- | --- |
 | 단일 클럭(A)으로 시작해 E7에서 컨트롤러 1 : PHY 2(B)로 전환. RTL UI 직렬화(C)는 채택하지 않음 | 명령이 드롭되지 않는 핸드셰이크와 뱅크 타이밍을 먼저 닫고 CDC를 올린다. UI 직렬화는 아날로그 PHY 경계 밖이다 | 클럭이 하나 늘고 포인터 동기화 리스크가 생긴다 → E8 Gray FIFO, E12 클럭 대조표 |
-| 메모리 컨트롤러는 Mini DRAM Controller v4 RTL을 동일 파일로 사용하고, PHY와는 DFI 형태 신호로만 연결 | 컨트롤러는 원 저장소에서 랜덤 회귀 600만 요청과 독립 타이밍 체커로 검증했다. 본 칩은 경계(행 · 열 명령 버스, WL 후 쓰기 데이터, `rddata_valid`)만 정합하면 되고, 두 저장소가 동일 RTL을 사용한다 | 컨트롤러 수정은 원 저장소에서 선행 후 반영한다(ModelSim 캐스트 수정, `q_empty` 출력). 원 저장소 모델은 RD 발행 후 3클럭에 data_valid를 받지만 본 PHY는 8클럭이라, RD in-flight를 4개로 제한하는 `RD_PIPE`가 읽기 대역폭을 제한한다([mission 데이터패스](#mission-데이터패스-ca-핀-16-ghz-beat-rdqs)) |
+| 메모리 컨트롤러는 Mini_DRAM_Controller v4 RTL을 동일 파일로 사용하고, PHY와는 DFI 형태 신호로만 연결 | 컨트롤러는 원 저장소에서 랜덤 회귀 600만 요청과 독립 타이밍 체커로 검증했다. 본 칩은 경계(행 · 열 명령 버스, WL 후 쓰기 데이터, `rddata_valid`)만 정합하면 되고, 두 저장소가 동일 RTL을 사용한다 | 컨트롤러 수정은 원 저장소에서 선행 후 반영한다(ModelSim 캐스트 수정, `q_empty` 출력). 원 저장소 모델은 RD 발행 후 3클럭에 data_valid를 받지만 본 PHY는 8클럭이라, RD in-flight를 4개로 제한하는 `RD_PIPE`가 읽기 대역폭을 제한한다([mission 데이터패스](#mission-데이터패스-ca-핀-16-ghz-beat-rdqs)) |
 | PHY 읽기 경로는 지연을 고정하지 않고 `rddata_valid`로 통지 | RDQS 캡처와 Gray FIFO 동기화의 지연은 RDQS 위상에 따라 약 1클럭 변동한다. 컨트롤러가 `rddata_valid`로 진행 중 RD 수를 카운트하므로 순서만 보장하면 된다 | 실제 DFI의 `tphy_rdlat` 같은 고정 지연 계약은 없다. 컨트롤러의 읽기 반환 FIFO는 PHY 왕복 지연만큼의 깊이가 필요하다 |
 | Beat-major 데이터 배치 | DBI와 ECC가 한 UI의 바이트를 한 덩어리로 다룬다 | 레인 단위 접근은 비트를 흩어 읽는다 |
 | CSR은 `rst_sync_n`만, 데이터패스는 `rst_sync_n & ~soft_rst` | CSR까지 soft reset에 넣으면 `soft_rst` 비트가 다음 사이클에 스스로 지워진다 | 리셋 도메인이 둘이 된다 |
@@ -801,7 +801,7 @@ rtl/
   include/       hsl_pkg: 파라미터, 핀 · CA 배치, CSR 맵, host_addr (컨트롤러의 XOR 주소 맵)
   top/           hsl_base_die_lite, hsl_rst_sync
   ctrl/          hsl_csr, hsl_training_fsm
-  mc/            dram_pkg, mem_ctrl, mc_* (Mini DRAM Controller v4, 원 저장소와 동일 파일: 로직 44a0bb3, 주석 422036a)
+  mc/            dram_pkg, mem_ctrl, mc_* (Mini_DRAM_Controller v4, 원 저장소와 동일 파일: 로직 44a0bb3, 주석 406c18d)
   phy/           hsl_phy_top, phy_mis, tx_gear, dbi, lane_shift, ecc, rd_train, deskew, cdc_fifo, phy_clk
   dft/           hsl_dft_top, prbs, loopback, err_cnt, lane_bist, mbist, bira, repair,
                  secded_enc · secded_dec, dfd, w1500
@@ -859,7 +859,7 @@ portfolio-deck/  포트폴리오 PDF, PPTX (29쪽, e61e90d 측정)
 향후 과제:
 
 - [x] mission 데이터패스: 행 · 열 CA 핀, 동기 TX 기어 + WDQS, RDQS 캡처 + Gray FIFO (T12, 이슈 C)
-- [x] Mini DRAM Controller v4를 DFI 형태로 연결해 in-order MC를 교체: FR-FCFS, refresh 발행과 tRFC, 핀 검사와 스코어보드 (T2–T4, `0193c04`)
+- [x] Mini_DRAM_Controller v4를 DFI 형태로 연결해 in-order MC를 교체: FR-FCFS, refresh 발행과 tRFC, 핀 검사와 스코어보드 (T2–T4, `0193c04`)
 - [x] Random traffic과 스코어보드로 toggle 커버리지 향상 (T3, `0193c04`에서 56.6 → 83.4%. DFT · DFD를 더한 지금은 80.2%, `e61e90d`)
 - [x] DBI-AC 모드와 off / DC / AC 전이 비교, DBI 읽기 경로 검증(T9)
 - [x] shift 방식 레인 리페어와 레인 BIST: 검출 → 재매핑 → 재검사(T10)
@@ -881,4 +881,4 @@ portfolio-deck/  포트폴리오 PDF, PPTX (29쪽, e61e90d 측정)
 
 ## 관련 프로젝트
 
-[Mini DRAM Controller](https://github.com/yhkwon-git/mini-dram-controller): 본 칩의 메모리 컨트롤러(`rtl/mc/`)가 해당 저장소의 v4 RTL이다. 컨트롤러 단독 검증(랜덤 회귀 600만 요청, 독립 타이밍 체커, 기능 커버리지)과 v1–v4의 latency, throughput, PPA 비교는 해당 저장소 참조.
+[Mini_DRAM_Controller](https://github.com/yhkwon-git/Mini_DRAM_Controller): 본 칩의 메모리 컨트롤러(`rtl/mc/`)가 해당 저장소의 v4 RTL이다. 컨트롤러 단독 검증(랜덤 회귀 600만 요청, 독립 타이밍 체커, 기능 커버리지)과 v1–v4의 latency, throughput, PPA 비교는 해당 저장소 참조.

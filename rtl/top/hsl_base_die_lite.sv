@@ -8,7 +8,7 @@
 //   CSR resets from rst_sync_n only
 //   every other block resets from rst_sync_n & ~soft_rst
 //
-// Memory controller: Mini DRAM Controller v4 (mem_ctrl in rtl/mc/, the same
+// Memory controller: Mini_DRAM_Controller v4 (mem_ctrl in rtl/mc/, the same
 // files as that repo). The host port takes word-addressed reads and writes and
 // answers each one in request order; writes are answered when accepted
 // (posted). Its DFI-style DRAM side goes straight to the PHY: a row command

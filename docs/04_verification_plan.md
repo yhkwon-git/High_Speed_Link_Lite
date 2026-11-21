@@ -8,7 +8,7 @@
 | 채널 | 핀 너머의 DRAM: 데이터 저장, DBI · 리페어 · eye 모델, 배열 고장(SA · TF · CFin · CFid · CFst, 16개), spare row · col 저장소(repair 표가 가리키는 접근), ECC 핀 8 bit를 워드 옆에 저장(고장 없음), 핀에서 프로토콜과 같은 뱅크 타이밍 검사 | `tb/models/dram_channel_behav.sv` |
 | 블록 | 레인 shift, deskew, PRBS, TX 기어, FIFO, DBI | `tb/tb_hsl_blocks.sv` |
 
-컨트롤러(`rtl/mc/`)의 단독 검증(랜덤 회귀, bind 타이밍 체커, 기능 커버리지)은 Mini DRAM Controller 저장소에 있다. 여기서는 칩 안에서 그 경계와 동작을 본다.
+컨트롤러(`rtl/mc/`)의 단독 검증(랜덤 회귀, bind 타이밍 체커, 기능 커버리지)은 Mini_DRAM_Controller 저장소에 있다. 여기서는 칩 안에서 그 경계와 동작을 본다.
 
 ## 스코어보드와 채널 모델 검사
 
