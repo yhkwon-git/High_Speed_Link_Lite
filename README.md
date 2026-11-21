@@ -13,8 +13,6 @@ Spec → Architecture → RTL → Verification → PD Guide
 
 <a href="portfolio-deck/HighSpeedLinkLite_Portfolio.pdf"><img src="portfolio-deck/cover.png" width="760" alt="포트폴리오 표지. 클릭하면 PDF가 열립니다"></a>
 
-SK hynix HBM Digital Design (RTL Design) 지원 · 권용현
-
 </div>
 
 ## 한눈에 보기
